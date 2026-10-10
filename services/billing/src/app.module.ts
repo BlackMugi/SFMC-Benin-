@@ -1,0 +1,19 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { CommonModule, typeOrmConfig } from '@sfmc/common';
+import { BillingController } from './billing.controller';
+import { BillingService } from './billing.service';
+import { Invoice } from './invoice.entity';
+import { MockPaymentProvider, PaymentProvider } from './payment.provider';
+
+@Module({
+  imports: [
+    CommonModule.forRoot({ serviceName: 'billing-service' }),
+    TypeOrmModule.forRoot(typeOrmConfig()),
+    TypeOrmModule.forFeature([Invoice]),
+  ],
+  controllers: [BillingController],
+  // Remplacer MockPaymentProvider par une implémentation réelle (Mobile Money, carte...)
+  providers: [BillingService, { provide: PaymentProvider, useClass: MockPaymentProvider }],
+})
+export class AppModule {}
