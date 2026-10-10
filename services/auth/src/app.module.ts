@@ -1,0 +1,23 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { CommonModule, typeOrmConfig } from '@sfmc/common';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { LocalTokenProvider } from './local-token.provider';
+import { OAuthClient } from './oauth-client.entity';
+import { OAuthController } from './oauth.controller';
+import { OAuthService } from './oauth.service';
+import { RefreshToken } from './refresh-token.entity';
+import { TokensService } from './tokens.service';
+
+@Module({
+  imports: [
+    // auth-service ne s'appelle pas lui-même pour obtenir un jeton de service : il le signe localement.
+    CommonModule.forRoot({ serviceName: 'auth-service', events: false, tokenProvider: LocalTokenProvider }),
+    TypeOrmModule.forRoot(typeOrmConfig()),
+    TypeOrmModule.forFeature([RefreshToken, OAuthClient]),
+  ],
+  controllers: [AuthController, OAuthController],
+  providers: [TokensService, AuthService, OAuthService],
+})
+export class AppModule {}

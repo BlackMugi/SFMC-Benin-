@@ -17,3 +17,9 @@ export function typeOrmConfig(): TypeOrmModuleOptions {
     retryDelay: 3000,
   };
 }
+
+/** Les colonnes NUMERIC de PostgreSQL arrivent en string : conversion en number. */
+export const numericTransformer = {
+  to: (v?: number | null) => v,
+  from: (v?: string | null) => (v === null || v === undefined ? v : parseFloat(v)),
+};

@@ -22,11 +22,13 @@
     "@nestjs/typeorm": "^11.0.0",
     "pg": "^8.13.0",
     "typeorm": "^0.3.20",
-    "bcryptjs": "^3.0.2"
+    "bcryptjs": "^3.0.2",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "@types/supertest": "^6.0.2",
-    "supertest": "^7.0.0"
+    "supertest": "^7.0.0",
+    "@types/jsonwebtoken": "^9.0.7"
   },
   "jest": {
     "preset": "ts-jest",
