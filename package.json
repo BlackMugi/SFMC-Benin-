@@ -6,7 +6,7 @@
   "workspaces": ["packages/*", "services/*"],
   "engines": { "node": ">=20" },
   "scripts": {
-    "build": "npm run build -w @sfmc/common && npm run build --workspaces --if-present -- --silent",
+    "build": "npm run build -w @sfmc/common && npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:integration": "jest --config tests/integration/jest.config.js --runInBand",
     "init:env": "node scripts/init-env.mjs",
