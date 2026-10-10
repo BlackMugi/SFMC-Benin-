@@ -4,4 +4,5 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/*.e2e.spec.js'],
   testTimeout: 180000,
+  globalSetup: '<rootDir>/global-setup.js',
 };

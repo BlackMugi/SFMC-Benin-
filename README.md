@@ -156,6 +156,10 @@ curl -sk https://localhost:8443/api/products -H "authorization: Bearer $TOKEN"
 curl -skN https://localhost:8443/api/production/stream -H "authorization: Bearer $TOKEN"   # SSE
 ```
 
+## Déploiement en production
+
+Procédure complète (certificat TLS, variables, sauvegardes, rollback), planning, risques techniques et facteurs de réussite : [`docs/04-deploiement-risques.md`](docs/04-deploiement-risques.md). Commande : `docker compose -f docker-compose.yml -f docker-compose.scale.yml -f docker-compose.prod.yml up -d --build`.
+
 ## Structure
 
 ```

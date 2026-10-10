@@ -1,0 +1,7 @@
+# Surcharge production : certificat TLS réel et ports standards.
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml -f docker-compose.prod.yml up -d --build
+# Déposer tls.crt (chaîne complète) et tls.key dans ./certs avant le démarrage (voir docs/04-deploiement-risques.md).
+services:
+  nginx:
+    ports: !override ["443:443", "80:80"]
+    volumes: !override ["./certs:/etc/nginx/certs:ro"]
