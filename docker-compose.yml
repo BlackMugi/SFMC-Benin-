@@ -1,0 +1,425 @@
+# Généré puis maintenu à la main. Variables : voir .env.example
+name: sfmc
+
+x-common-env: &common-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant - lancer npm run init:env}
+  JWT_ISSUER: ${JWT_ISSUER:-sfmc-auth}
+  RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+  CONSUL_HOST: consul
+  CONSUL_PORT: "8500"
+  PORT: "3000"
+
+x-service: &service
+  restart: unless-stopped
+  networks: [sfmc]
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 20s
+
+x-postgres: &postgres
+  image: postgres:16-alpine
+  restart: unless-stopped
+  networks: [sfmc]
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+    interval: 5s
+    timeout: 5s
+    retries: 10
+
+services:
+  # ---------------- Reverse proxy HTTPS ----------------
+  nginx:
+    build: ./infra/nginx
+    restart: unless-stopped
+    networks: [sfmc]
+    ports: ["${HTTPS_PORT:-8443}:443", "${HTTP_PORT:-8080}:80"]
+    volumes: [nginx-certs:/etc/nginx/certs]
+    depends_on:
+      api-gateway: { condition: service_healthy }
+
+  # ---------------- Infrastructure ----------------
+  consul:
+    image: hashicorp/consul:1.20
+    command: agent -dev -client=0.0.0.0 -ui
+    restart: unless-stopped
+    networks: [sfmc]
+    ports: ["127.0.0.1:8500:8500"]
+    healthcheck:
+      test: ["CMD-SHELL", "consul members >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    networks: [sfmc]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports: ["127.0.0.1:15672:15672"]
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    networks: [sfmc]
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    restart: unless-stopped
+    networks: [sfmc]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["127.0.0.1:3100:3000"]
+    depends_on: [prometheus]
+
+  # ---------------- Bases de données (une par service) ----------------
+  auth-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
+      POSTGRES_DB: auth
+    volumes: [auth-db-data:/var/lib/postgresql/data]
+
+  user-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD}
+      POSTGRES_DB: user
+    volumes: [user-db-data:/var/lib/postgresql/data]
+
+  product-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: product
+      POSTGRES_PASSWORD: ${PRODUCT_DB_PASSWORD}
+      POSTGRES_DB: product
+    volumes: [product-db-data:/var/lib/postgresql/data]
+
+  inventory-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD}
+      POSTGRES_DB: inventory
+    volumes: [inventory-db-data:/var/lib/postgresql/data]
+
+  order-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD}
+      POSTGRES_DB: order
+    volumes: [order-db-data:/var/lib/postgresql/data]
+
+  production-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: production
+      POSTGRES_PASSWORD: ${PRODUCTION_DB_PASSWORD}
+      POSTGRES_DB: production
+    volumes: [production-db-data:/var/lib/postgresql/data]
+
+  billing-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: billing
+      POSTGRES_PASSWORD: ${BILLING_DB_PASSWORD}
+      POSTGRES_DB: billing
+    volumes: [billing-db-data:/var/lib/postgresql/data]
+
+  notification-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      POSTGRES_DB: notification
+    volumes: [notification-db-data:/var/lib/postgresql/data]
+
+  reporting-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: reporting
+      POSTGRES_PASSWORD: ${REPORTING_DB_PASSWORD}
+      POSTGRES_DB: reporting
+    volumes: [reporting-db-data:/var/lib/postgresql/data]
+
+  # ---------------- Microservices ----------------
+  api-gateway:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: api-gateway }
+    image: sfmc/api-gateway
+    environment:
+      <<: *common-env
+      SERVICE_NAME: api-gateway
+      SERVICE_HOST: api-gateway
+      CORS_ORIGINS: "${CORS_ORIGINS}"
+      GATEWAY_RATE_LIMIT: "${GATEWAY_RATE_LIMIT:-300}"
+      GATEWAY_AUTH_RATE_LIMIT: "${GATEWAY_AUTH_RATE_LIMIT:-30}"
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  auth-service:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: auth }
+    image: sfmc/auth-service
+    environment:
+      <<: *common-env
+      SERVICE_NAME: auth-service
+      SERVICE_HOST: auth-service
+      DB_HOST: auth-db
+      DB_PORT: "5432"
+      DB_NAME: auth
+      DB_USER: auth
+      DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      ORDER_CLIENT_SECRET: "${ORDER_CLIENT_SECRET}"
+      PARTNER_DEMO_CLIENT_SECRET: "${PARTNER_DEMO_CLIENT_SECRET}"
+      JWT_ACCESS_TTL: "${JWT_ACCESS_TTL:-900}"
+      JWT_REFRESH_TTL_DAYS: "${JWT_REFRESH_TTL_DAYS:-7}"
+    ports: ["127.0.0.1:3001:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      auth-db: { condition: service_healthy }
+
+  user-service:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: user }
+    image: sfmc/user-service
+    environment:
+      <<: *common-env
+      SERVICE_NAME: user-service
+      SERVICE_HOST: user-service
+      DB_HOST: user-db
+      DB_PORT: "5432"
+      DB_NAME: user
+      DB_USER: user
+      DB_PASSWORD: ${USER_DB_PASSWORD}
+      ADMIN_EMAIL: "${ADMIN_EMAIL}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
+    ports: ["127.0.0.1:3002:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      user-db: { condition: service_healthy }
+
+  product-service:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: product }
+    image: sfmc/product-service
+    environment:
+      <<: *common-env
+      SERVICE_NAME: product-service
+      SERVICE_HOST: product-service
+      DB_HOST: product-db
+      DB_PORT: "5432"
+      DB_NAME: product
+      DB_USER: product
+      DB_PASSWORD: ${PRODUCT_DB_PASSWORD}
+      SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
+    ports: ["127.0.0.1:3003:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      product-db: { condition: service_healthy }
+
+  inventory-service:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: inventory }
+    image: sfmc/inventory-service
+    environment:
+      <<: *common-env
+      SERVICE_NAME: inventory-service
+      SERVICE_HOST: inventory-service
+      DB_HOST: inventory-db
+      DB_PORT: "5432"
+      DB_NAME: inventory
+      DB_USER: inventory
+      DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
+      DEFAULT_WAREHOUSE_CODE: "${DEFAULT_WAREHOUSE_CODE:-COTONOU}"
+      LEAD_TIME_DAYS: "${LEAD_TIME_DAYS:-2}"
+      SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
+    ports: ["127.0.0.1:3004:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      inventory-db: { condition: service_healthy }
+
+  order-service:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: order }
+    image: sfmc/order-service
+    environment:
+      <<: *common-env
+      SERVICE_NAME: order-service
+      SERVICE_HOST: order-service
+      DB_HOST: order-db
+      DB_PORT: "5432"
+      DB_NAME: order
+      DB_USER: order
+      DB_PASSWORD: ${ORDER_DB_PASSWORD}
+      SERVICE_CLIENT_ID: "order-service"
+      SERVICE_CLIENT_SECRET: "${ORDER_CLIENT_SECRET}"
+    ports: ["127.0.0.1:3005:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      order-db: { condition: service_healthy }
+
+  production-service:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: production }
+    image: sfmc/production-service
+    environment:
+      <<: *common-env
+      SERVICE_NAME: production-service
+      SERVICE_HOST: production-service
+      DB_HOST: production-db
+      DB_PORT: "5432"
+      DB_NAME: production
+      DB_USER: production
+      DB_PASSWORD: ${PRODUCTION_DB_PASSWORD}
+      PRODUCTION_SPEED_FACTOR: "${PRODUCTION_SPEED_FACTOR:-120}"
+      MAX_WORK_ORDER_QTY: "${MAX_WORK_ORDER_QTY:-100000}"
+      SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
+    ports: ["127.0.0.1:3006:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      production-db: { condition: service_healthy }
+
+  billing-service:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: billing }
+    image: sfmc/billing-service
+    environment:
+      <<: *common-env
+      SERVICE_NAME: billing-service
+      SERVICE_HOST: billing-service
+      DB_HOST: billing-db
+      DB_PORT: "5432"
+      DB_NAME: billing
+      DB_USER: billing
+      DB_PASSWORD: ${BILLING_DB_PASSWORD}
+      TAX_RATE: "${TAX_RATE:-0.18}"
+      CURRENCY: "${CURRENCY:-XOF}"
+    ports: ["127.0.0.1:3007:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      billing-db: { condition: service_healthy }
+
+  notification-service:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: notification }
+    image: sfmc/notification-service
+    environment:
+      <<: *common-env
+      SERVICE_NAME: notification-service
+      SERVICE_HOST: notification-service
+      DB_HOST: notification-db
+      DB_PORT: "5432"
+      DB_NAME: notification
+      DB_USER: notification
+      DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      NOTIFICATION_PROVIDER: "${NOTIFICATION_PROVIDER:-mock}"
+      ADMIN_NOTIFY_EMAIL: "${ADMIN_NOTIFY_EMAIL:-ops@sfmc.bj}"
+    ports: ["127.0.0.1:3008:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      notification-db: { condition: service_healthy }
+
+  reporting-service:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args: { SERVICE: reporting }
+    image: sfmc/reporting-service
+    environment:
+      <<: *common-env
+      SERVICE_NAME: reporting-service
+      SERVICE_HOST: reporting-service
+      DB_HOST: reporting-db
+      DB_PORT: "5432"
+      DB_NAME: reporting
+      DB_USER: reporting
+      DB_PASSWORD: ${REPORTING_DB_PASSWORD}
+    ports: ["127.0.0.1:3009:3000"]
+    depends_on:
+      consul: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      reporting-db: { condition: service_healthy }
+
+networks:
+  sfmc:
+    driver: bridge
+
+volumes:
+  nginx-certs:
+  rabbitmq-data:
+  prometheus-data:
+  grafana-data:
+  auth-db-data:
+  user-db-data:
+  product-db-data:
+  inventory-db-data:
+  order-db-data:
+  production-db-data:
+  billing-db-data:
+  notification-db-data:
+  reporting-db-data:

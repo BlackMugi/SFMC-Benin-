@@ -1,0 +1,35 @@
+{
+  "name": "@sfmc/api-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Point d'entrée unique : routage via Consul, authentification JWT, rate limiting, CORS",
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "@sfmc/common": "*",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "http-proxy-middleware": "^3.0.5",
+    "express-rate-limit": "^7.5.0"
+  },
+  "devDependencies": {
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "rootDir": "src",
+    "testRegex": ".*[.]spec[.]ts$"
+  }
+}
