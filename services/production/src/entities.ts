@@ -24,7 +24,7 @@ export class Machine {
   status: MachineStatus;
 }
 
-export type WorkOrderStatus = 'QUEUED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+export type WorkOrderStatus = 'QUEUED' | 'IN_PROGRESS' | 'QUALITY_CHECK' | 'COMPLETED' | 'FAILED';
 
 @Entity('work_orders')
 @Unique(['orderId', 'productId'])
@@ -75,6 +75,16 @@ export class WorkOrder {
 
   @Column({ name: 'started_at', type: 'timestamptz', nullable: true })
   startedAt: Date | null;
+
+  /** Résultat du contrôle qualité : PASSED | FAILED (null tant que non inspecté) */
+  @Column({ name: 'quality_result', type: 'varchar', nullable: true })
+  qualityResult: 'PASSED' | 'FAILED' | null;
+
+  @Column({ name: 'quality_notes', type: 'varchar', nullable: true })
+  qualityNotes: string | null;
+
+  @Column({ name: 'quality_checked_at', type: 'timestamptz', nullable: true })
+  qualityCheckedAt: Date | null;
 
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
   completedAt: Date | null;

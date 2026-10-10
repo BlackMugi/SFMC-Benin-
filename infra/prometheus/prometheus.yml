@@ -5,20 +5,22 @@ global:
 scrape_configs:
   - job_name: sfmc-services
     metrics_path: /metrics
-    static_configs:
-      - targets:
-          - api-gateway:3000
-          - auth-service:3000
-          - user-service:3000
-          - product-service:3000
-          - inventory-service:3000
-          - order-service:3000
-          - production-service:3000
-          - billing-service:3000
-          - notification-service:3000
-          - reporting-service:3000
+    # Découverte DNS : chaque réplique d'un service est scrapée séparément (docker compose up --scale)
+    dns_sd_configs:
+      - names:
+          - api-gateway
+          - auth-service
+          - user-service
+          - product-service
+          - inventory-service
+          - order-service
+          - production-service
+          - billing-service
+          - notification-service
+          - reporting-service
+        type: A
+        port: 3000
+        refresh_interval: 10s
     relabel_configs:
-      - source_labels: [__address__]
-        regex: '([^:]+):.*'
+      - source_labels: [__meta_dns_name]
         target_label: instance_name
-        replacement: '$1'

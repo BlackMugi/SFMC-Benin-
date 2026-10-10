@@ -3,8 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "description": "Plateforme microservices SFMC Bénin",
-  "workspaces": ["packages/*", "services/*"],
-  "engines": { "node": ">=20" },
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "npm run build -w @sfmc/common && npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
@@ -12,7 +17,9 @@
     "init:env": "node scripts/init-env.mjs",
     "demo": "node scripts/demo.mjs",
     "up": "docker compose up --build -d",
-    "down": "docker compose down"
+    "down": "docker compose down",
+    "load": "node scripts/load-test.mjs",
+    "load:ha": "node scripts/load-test.mjs --kill order-service"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",

@@ -71,6 +71,18 @@ Garanties : consommateurs idempotents (clés d'unicité, compare-and-set), 3 ré
 
 Priorité = `urgence × 100` + ancienneté (0,5/min, plafonné) + échéance (+50 sous 24 h, +100 dépassée). Chaque machine libre prend l'ordre le plus prioritaire de sa catégorie ; `GET /api/production/planning` donne l'ordre de passage et les créneaux estimés. `PRODUCTION_SPEED_FACTOR` accélère la simulation.
 
+### Contrôle qualité (Production)
+
+Fin de fabrication : la machine est libérée et le lot passe à `QUALITY_CHECK` (`QUALITY_CHECK_SECONDS`, 2 s par défaut). Lot conforme : `COMPLETED` puis `ProductionCompleted` (mise en stock). Lot non conforme (taux `QUALITY_FAIL_RATE`, 0 par défaut) : `FAILED` puis `ProductionFailed`, la commande est rejetée (compensation). Le résultat (`qualityResult`, `qualityNotes`) est stocké sur l'ordre de fabrication et visible dans le flux SSE (`quality_check`).
+
+## Disponibilité et performance
+
+- Services stateless, `restart: unless-stopped`, healthchecks Docker, retrait automatique des instances malsaines par Consul.
+- **Haute disponibilité** : `docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --build` lance 2 répliques de gateway, auth, product, inventory et order. nginx répartit la charge entre les gateways (DNS dynamique), les gateways entre les services (Consul, round-robin), Prometheus scrape chaque réplique. `production-service` reste unique (flux SSE en mémoire). Le rate limit est compté par instance de gateway.
+- La gateway écarte une instance injoignable et rejoue les requêtes de lecture (GET/HEAD) sur une autre.
+- **Test de charge k6** (`npm run load`) : 30 utilisateurs virtuels sur 6 endpoints, seuils p95 < 2 s et erreurs < 1 %. `npm run load:ha` tue en plus une réplique d'`order-service` pendant la charge. Pour la charge, relever `GATEWAY_RATE_LIMIT` (par ex. 100000) avant `docker compose up`.
+- Mesuré en local (stack à 2 répliques) : p95 ≈ 80 ms, 0 % d'erreur, ≈ 400 req/s. Avec arrêt brutal d'une réplique : < 1 % d'erreurs (requêtes en vol sur l'instance tuée).
+
 ## Sécurité (OWASP)
 
 - **HTTPS** via nginx (certificat auto-signé généré au démarrage, TLS 1.2+, HSTS) ; en production, monter un vrai certificat dans le volume `nginx-certs`.

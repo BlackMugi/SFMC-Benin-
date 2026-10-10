@@ -1,0 +1,16 @@
+# Haute disponibilité : plusieurs répliques des services stateless.
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --build
+# Les ports hôte de debug sont retirés (une seule réplique pourrait les occuper) ; les répliques
+# restent joignables via nginx (gateway) et Consul (inter-services), et scrapées par Prometheus (DNS).
+# production-service reste à 1 : le flux SSE est tenu en mémoire par instance.
+x-replicated: &replicated
+  ports: !reset []
+  deploy:
+    replicas: 2
+
+services:
+  api-gateway: *replicated
+  auth-service: *replicated
+  product-service: *replicated
+  inventory-service: *replicated
+  order-service: *replicated

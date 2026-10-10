@@ -1,13 +1,18 @@
 import { INestApplication, Logger } from '@nestjs/common';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import rateLimit from 'express-rate-limit';
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { ConsulService, CORRELATION_HEADER, env, envInt, extractBearer, getCorrelationId, verifyAccessToken } from '@sfmc/common';
 import { BLOCKED, isPublic, pathOf, serviceFor } from './routes';
 
 const log = new Logger('Gateway');
 
-type GatewayRequest = Request & { sfmcTarget?: string };
+type GatewayRequest = Request & { sfmcTarget?: string; sfmcRetried?: boolean };
+
+const isStream = (url: string) => url.startsWith('/api/production/stream');
+
+/** Erreurs réseau signalant une instance morte (et non une erreur applicative). */
+const DEAD_INSTANCE = new Set(['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENOTFOUND', 'EPIPE']);
 
 function json(res: Response, status: number, message: string) {
   res.status(status).json({ statusCode: status, message });
@@ -72,21 +77,41 @@ export function setupGateway(app: INestApplication) {
     }
   });
 
-  const proxy = createProxyMiddleware<GatewayRequest, Response>({
+  // Timeout court pour les requêtes classiques (une instance morte est détectée vite et la lecture rejouée) ;
+  // long pour le flux SSE de production, qui peut rester ouvert indéfiniment (heartbeat toutes les 15 s).
+  const buildProxy = (timeoutMs: number): RequestHandler => createProxyMiddleware<GatewayRequest, Response>({
     target: 'http://placeholder.invalid',
     changeOrigin: true,
     xfwd: true,
-    proxyTimeout: 30_000,
-    timeout: 30_000,
+    proxyTimeout: timeoutMs,
+    timeout: timeoutMs + 5_000, // doit dépasser proxyTimeout : sinon la socket client est coupée avant que l'erreur soit traitée (et la lecture rejouée)
     router: (req) => req.sfmcTarget!,
     pathRewrite: (_path, req) => req.originalUrl.replace(/^\/api/, ''),
     on: {
-      error: (err, _req, res) => {
-        log.error(`Erreur de proxy : ${(err as Error).message}`);
+      error: async (err, req, res) => {
+        const gr = req as GatewayRequest;
+        const service = serviceFor(gr.originalUrl);
         const r = res as Response;
+        // Instance morte : on l'écarte du cache, et une requête de lecture est rejouée sur une autre instance.
+        if (service && gr.sfmcTarget && DEAD_INSTANCE.has((err as NodeJS.ErrnoException).code ?? '')) {
+          consul.markDown(service, gr.sfmcTarget);
+          if (!gr.sfmcRetried && ['GET', 'HEAD'].includes(gr.method) && !r.headersSent) {
+            gr.sfmcRetried = true;
+            try {
+              gr.sfmcTarget = await consul.resolve(service);
+              log.warn(`Instance injoignable (${(err as Error).message}) : nouvel essai sur ${gr.sfmcTarget}`);
+              return void (isStream(gr.originalUrl) ? streamProxy : proxy)(gr, r, () => undefined);
+            } catch {
+              /* plus aucune instance saine : réponse 502 ci-dessous */
+            }
+          }
+        }
+        log.error(`Erreur de proxy : ${(err as Error).message}`);
         if (!r.headersSent && typeof r.status === 'function') r.status(502).json({ statusCode: 502, message: 'Service injoignable' });
       },
     },
   });
-  app.use('/api', proxy);
+  const proxy = buildProxy(envInt('GATEWAY_PROXY_TIMEOUT_MS', 10_000));
+  const streamProxy = buildProxy(3_600_000);
+  app.use('/api', (req: Request, res: Response, next: NextFunction) => (isStream(req.originalUrl) ? streamProxy : proxy)(req, res, next));
 }

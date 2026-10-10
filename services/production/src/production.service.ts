@@ -41,6 +41,13 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
   private get minSeconds() {
     return envInt('PRODUCTION_MIN_SECONDS', 6);
   }
+  /** Délai simulé du contrôle qualité (s) et taux d'échec de l'inspection (0 à 1). */
+  private get qualitySeconds() {
+    return envInt('QUALITY_CHECK_SECONDS', 2);
+  }
+  private get qualityFailRate() {
+    return Number(process.env.QUALITY_FAIL_RATE ?? 0);
+  }
   private get maxQty() {
     return envInt('MAX_WORK_ORDER_QTY', 100_000);
   }
@@ -159,13 +166,13 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
 
   /** Flux SSE : instantané des ordres en cours, puis progression en temps réel + heartbeat. */
   stream(workOrderId?: string): Observable<SseMessage> {
-    const snapshot = defer(() => from(this.workOrders.find({ where: { status: In(['QUEUED', 'IN_PROGRESS']) } }))).pipe(
+    const snapshot = defer(() => from(this.workOrders.find({ where: { status: In(['QUEUED', 'IN_PROGRESS', 'QUALITY_CHECK']) } }))).pipe(
       map((rows) => rows.filter((r) => !workOrderId || r.id === workOrderId)),
       map((rows) => ({ type: 'snapshot', data: rows.map((r) => this.toEvent(r, null)) })),
     );
     const live = this.progress$.pipe(
       filter((e) => !workOrderId || e.workOrderId === workOrderId),
-      map((e) => ({ type: e.status === 'COMPLETED' ? 'completed' : 'progress', data: e })),
+      map((e) => ({ type: { COMPLETED: 'completed', FAILED: 'failed', QUALITY_CHECK: 'quality_check' }[e.status] ?? 'progress', data: e })),
     );
     const heartbeat = interval(15_000).pipe(map(() => ({ type: 'heartbeat', data: { at: new Date().toISOString() } })));
     return concat(snapshot, merge(live, heartbeat));
@@ -184,6 +191,7 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
     try {
       await this.assign();
       await this.advance();
+      await this.inspect();
     } catch (e) {
       this.log.error(`Erreur du planificateur : ${(e as Error).message}`);
     } finally {
@@ -229,12 +237,38 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
         this.progress$.next(this.toEvent({ ...wo, progress: pct }, machine?.name ?? null));
         continue;
       }
-      const done = await this.workOrders.update({ id: wo.id, status: 'IN_PROGRESS' }, { status: 'COMPLETED', progress: 100, completedAt: new Date() });
-      if (!done.affected) continue; // terminé par une autre instance
+      // Fabrication terminée : la machine est libérée, le lot passe au contrôle qualité avant mise en stock.
+      const done = await this.workOrders.update({ id: wo.id, status: 'IN_PROGRESS' }, { status: 'QUALITY_CHECK', progress: 100 });
+      if (!done.affected) continue; // traité par une autre instance
       if (wo.machineId) await this.machines.update({ id: wo.machineId }, { status: 'IDLE' });
-      this.progress$.next(this.toEvent({ ...wo, status: 'COMPLETED', progress: 100 }, machine?.name ?? null));
-      await this.bus.publish(EVENTS.ProductionCompleted, { workOrderId: wo.id, orderId: wo.orderId ?? undefined, productId: wo.productId, productName: wo.productName, quantity: wo.quantity, machineId: wo.machineId ?? '' });
-      this.log.log(`Ordre ${wo.id} terminé (${wo.quantity} × ${wo.productName})`);
+      this.progress$.next(this.toEvent({ ...wo, status: 'QUALITY_CHECK', progress: 100 }, machine?.name ?? null));
+      this.log.log(`Ordre ${wo.id} fabriqué : contrôle qualité en cours`);
+    }
+  }
+
+  /** Inspecte les lots en attente de contrôle : conforme -> ProductionCompleted, non conforme -> ProductionFailed (compensation côté commande). */
+  private async inspect() {
+    const waiting = await this.workOrders.find({ where: { status: 'QUALITY_CHECK' } });
+    for (const wo of waiting) {
+      if (Date.now() - wo.updatedAt.getTime() < this.qualitySeconds * 1000) continue;
+      const passed = Math.random() >= this.qualityFailRate;
+      const notes = passed ? 'Lot conforme' : 'Lot non conforme : rebut';
+      const res = await this.workOrders.update(
+        { id: wo.id, status: 'QUALITY_CHECK' },
+        passed
+          ? { status: 'COMPLETED', qualityResult: 'PASSED', qualityNotes: notes, qualityCheckedAt: new Date(), completedAt: new Date() }
+          : { status: 'FAILED', qualityResult: 'FAILED', qualityNotes: notes, qualityCheckedAt: new Date() },
+      );
+      if (!res.affected) continue;
+      const machine = wo.machineId ? await this.machines.findOne({ where: { id: wo.machineId } }) : null;
+      this.progress$.next(this.toEvent({ ...wo, status: passed ? 'COMPLETED' : 'FAILED', progress: 100 }, machine?.name ?? null));
+      if (passed) {
+        await this.bus.publish(EVENTS.ProductionCompleted, { workOrderId: wo.id, orderId: wo.orderId ?? undefined, productId: wo.productId, productName: wo.productName, quantity: wo.quantity, machineId: wo.machineId ?? '' });
+        this.log.log(`Ordre ${wo.id} conforme (${wo.quantity} × ${wo.productName})`);
+      } else {
+        if (wo.orderId) await this.bus.publish(EVENTS.ProductionFailed, { orderId: wo.orderId, productId: wo.productId, reason: notes });
+        this.log.warn(`Ordre ${wo.id} rejeté au contrôle qualité`);
+      }
     }
   }
 

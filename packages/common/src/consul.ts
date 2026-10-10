@@ -97,6 +97,12 @@ export class ConsulService implements OnApplicationShutdown {
     return entry.urls[i];
   }
 
+  /** Retire une instance injoignable du cache : les requêtes suivantes l'évitent sans attendre le prochain contrôle Consul. */
+  markDown(service: string, url: string) {
+    const entry = this.cache.get(service);
+    if (entry) entry.urls = entry.urls.filter((u) => u !== url);
+  }
+
   invalidate(service: string) {
     this.cache.delete(service);
   }
