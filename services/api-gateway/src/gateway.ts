@@ -32,6 +32,19 @@ export function setupGateway(app: INestApplication) {
     maxAge: 600,
   });
 
+  // --- Page d'accueil (évite le 404 quand on ouvre la racine dans un navigateur) ---
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (req.path === '/favicon.ico') return void res.status(204).end();
+    if (req.path !== '/') return next();
+    res.json({
+      name: 'SFMC Bénin - API Gateway',
+      status: 'ok',
+      links: { docs: '/docs', health: '/health', api: '/api/<ressource>' },
+      resources: ['auth', 'users', 'products', 'inventory', 'orders', 'production', 'invoices', 'notifications', 'reports'],
+    });
+  });
+
   // --- Rate limiting : global par IP, plus strict sur les points d'authentification (anti brute-force) ---
   const limitOpts = { windowMs: 60_000, standardHeaders: 'draft-7' as const, legacyHeaders: false, message: { statusCode: 429, message: 'Trop de requêtes, réessayez plus tard' } };
   const globalLimiter = rateLimit({ ...limitOpts, limit: envInt('GATEWAY_RATE_LIMIT', 300) });
