@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth';
 import { ConsulService } from './consul';
 import { EventBus } from './event-bus';
+import { Outbox } from './outbox';
 import { HealthController } from './health.controller';
 import { MetricsService } from './metrics';
 import { SFMC_OPTIONS, SfmcOptions } from './options';
@@ -27,13 +28,14 @@ export class CommonModule implements OnModuleInit {
         { provide: MetricsService, useFactory: () => new MetricsService(options.serviceName) },
         ConsulService,
         EventBus,
+        Outbox,
         ServiceClient,
         OAuthTokenProvider,
         { provide: ServiceTokenProvider, useExisting: options.tokenProvider ?? OAuthTokenProvider },
         ...(options.tokenProvider ? [options.tokenProvider] : []),
         { provide: APP_GUARD, useClass: AuthGuard },
       ],
-      exports: [SFMC_OPTIONS, MetricsService, ConsulService, EventBus, ServiceClient, ServiceTokenProvider],
+      exports: [SFMC_OPTIONS, MetricsService, ConsulService, EventBus, Outbox, ServiceClient, ServiceTokenProvider],
     };
   }
 }

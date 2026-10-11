@@ -28,12 +28,29 @@ function setup(over: { product?: any; availability?: any } = {}) {
     }),
   };
   const history: any = { create: (v: any) => v, save: jest.fn(async (v: any) => v) };
-  const bus: any = { publish: jest.fn(async (type: string, payload: any) => published.push({ type, payload })) };
+  const bus: any = {};
+  // EntityManager de transaction : délègue aux faux dépôts (Order) ; l'historique est accepté tel quel
+  const manager: any = {
+    create: (entity: any, v: any) => (entity.name === 'Order' ? orders.create(v) : history.create(v)),
+    save: (v: any) => ('customerId' in v ? orders.save(v) : history.save(v)),
+    findOne: (_e: any, opts: any) => orders.findOne(opts),
+    findOneOrFail: (_e: any, opts: any) => orders.findOneOrFail(opts),
+    update: (_e: any, cond: any, patch: any) => orders.update(cond, patch),
+  };
+  // Outbox : les événements ne sont « publiés » que si la transaction réussit (comme en vrai)
+  const outbox: any = {
+    run: jest.fn(async (fn: any) => {
+      const events: { type: string; payload: any }[] = [];
+      const result = await fn(manager, events);
+      published.push(...events);
+      return result;
+    }),
+  };
   const services: any = {
     get: jest.fn(async () => over.product ?? { id: 'p1', name: 'Ciment', category: 'cement', unitPrice: 6500, active: true }),
     post: jest.fn(async () => over.availability ?? { available: false, lines: [] }),
   };
-  return { svc: new OrdersService(orders, history, bus, services), rows, published, services };
+  return { svc: new OrdersService(orders, history, bus, outbox, services), rows, published, services };
 }
 
 describe('machine à états', () => {

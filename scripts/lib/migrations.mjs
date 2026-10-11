@@ -1,7 +1,7 @@
 // Outils communs aux scripts de migration : base PostgreSQL jetable (Docker) et chargement des entités compilées d'un service.
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
@@ -62,6 +62,10 @@ export async function loadService(service) {
     for (const exp of Object.values(require(resolve(dist, f)))) {
       if (typeof exp === 'function' && storage.tables.some((t) => t.target === exp)) entities.add(exp);
     }
+  }
+  // Entités communes (outbox, déduplication) déclarées par le module du service
+  if (readFileSync(resolve(dist, 'app.module.js'), 'utf8').includes('OUTBOX_ENTITIES')) {
+    for (const e of require('@sfmc/common').OUTBOX_ENTITIES) entities.add(e);
   }
   const index = resolve(dist, 'migrations', 'index.js');
   const migrations = existsSync(index) ? require(index).MIGRATIONS : [];

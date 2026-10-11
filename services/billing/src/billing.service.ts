@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { AuthUser, EVENTS, EventBus, EventEnvelope, OrderCancelledPayload, OrderRejectedPayload, OrderValidatedPayload, Role, envFloat, env } from '@sfmc/common';
+import { AuthUser, EVENTS, EventBus, EventEnvelope, Outbox, OrderCancelledPayload, OrderRejectedPayload, OrderValidatedPayload, Role, envFloat, env } from '@sfmc/common';
 import { Invoice, InvoiceLine } from './invoice.entity';
 import { PaymentProvider } from './payment.provider';
 
@@ -21,6 +21,7 @@ export class BillingService implements OnModuleInit {
     @InjectRepository(Invoice) private readonly invoices: Repository<Invoice>,
     @InjectDataSource() private readonly ds: DataSource,
     private readonly bus: EventBus,
+    private readonly outbox: Outbox,
     private readonly payments: PaymentProvider,
   ) {}
 
@@ -38,19 +39,23 @@ export class BillingService implements OnModuleInit {
     if (await this.invoices.exists({ where: { orderId: p.orderId } })) return null;
     const lines: InvoiceLine[] = p.items.map((i) => ({ productId: i.productId, productName: i.productName, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: round2(i.quantity * i.unitPrice) }));
     const totals = computeTotals(lines, envFloat('TAX_RATE', 0.18));
-    const [{ nextval }] = await this.ds.query("SELECT nextval('invoice_number_seq') AS nextval");
-    const number = `INV-${new Date().getFullYear()}-${String(nextval).padStart(6, '0')}`;
     let invoice: Invoice;
     try {
-      invoice = await this.invoices.save(
-        this.invoices.create({ number, orderId: p.orderId, customerId: p.customerId, customerEmail: p.customerEmail || null, lines, ...totals, currency: env('CURRENCY', 'XOF'), status: 'ISSUED', paymentMethod: null, paymentReference: null, paidAt: null }),
-      );
+      // Facture et InvoiceIssued dans la même transaction (outbox)
+      invoice = await this.outbox.run(async (m, events) => {
+        const [{ nextval }] = await m.query("SELECT nextval('invoice_number_seq') AS nextval");
+        const number = `INV-${new Date().getFullYear()}-${String(nextval).padStart(6, '0')}`;
+        const inv = await m.save(
+          m.create(Invoice, { number, orderId: p.orderId, customerId: p.customerId, customerEmail: p.customerEmail || null, lines, ...totals, currency: env('CURRENCY', 'XOF'), status: 'ISSUED', paymentMethod: null, paymentReference: null, paidAt: null }),
+        );
+        events.push({ type: EVENTS.InvoiceIssued, payload: { orderId: p.orderId, customerId: p.customerId, customerEmail: p.customerEmail, invoiceId: inv.id, number: inv.number, amount: inv.amount, currency: inv.currency } });
+        return inv;
+      });
     } catch (err) {
-      if ((err as { code?: string }).code === '23505') return null; // doublon concurrent : déjà facturée
+      if ((err as { code?: string }).code === '23505') return null; // doublon concurrent : déjà facturée (transaction annulée)
       throw err;
     }
     this.log.log(`Facture ${invoice.number} émise pour la commande ${p.orderId} (${invoice.amount} ${invoice.currency})`);
-    await this.bus.publish(EVENTS.InvoiceIssued, { orderId: p.orderId, customerId: p.customerId, customerEmail: p.customerEmail, invoiceId: invoice.id, number: invoice.number, amount: invoice.amount, currency: invoice.currency });
     return invoice;
   }
 
@@ -86,10 +91,12 @@ export class BillingService implements OnModuleInit {
     if (inv.status === 'CANCELLED') throw new BadRequestException('Facture annulée');
     const { reference } = await this.payments.charge({ invoiceId: inv.id, amount: inv.amount, currency: inv.currency, method });
     // compare-and-set : un seul paiement gagnant en cas de double appel concurrent
-    const res = await this.invoices.update({ id, status: 'ISSUED' }, { status: 'PAID', paymentMethod: method, paymentReference: reference, paidAt: new Date() });
-    if (!res.affected) throw new ConflictException('Facture déjà traitée');
-    const fresh = await this.invoices.findOneOrFail({ where: { id } });
-    await this.bus.publish(EVENTS.InvoicePaid, { invoiceId: fresh.id, orderId: fresh.orderId, amount: fresh.amount, method, customerEmail: fresh.customerEmail ?? '' });
-    return fresh;
+    return this.outbox.run(async (m, events) => {
+      const res = await m.update(Invoice, { id, status: 'ISSUED' }, { status: 'PAID', paymentMethod: method, paymentReference: reference, paidAt: new Date() });
+      if (!res.affected) throw new ConflictException('Facture déjà traitée');
+      const fresh = await m.findOneOrFail(Invoice, { where: { id } });
+      events.push({ type: EVENTS.InvoicePaid, payload: { invoiceId: fresh.id, orderId: fresh.orderId, amount: fresh.amount, method, customerEmail: fresh.customerEmail ?? '' } });
+      return fresh;
+    });
   }
 }

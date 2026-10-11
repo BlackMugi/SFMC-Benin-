@@ -9,6 +9,7 @@ export * from './database';
 export * from './options';
 export * from './consul';
 export * from './event-bus';
+export * from './outbox';
 export * from './service-client';
 export * from './common.module';
 export * from './bootstrap';

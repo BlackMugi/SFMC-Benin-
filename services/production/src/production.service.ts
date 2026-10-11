@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicati
 import { InjectRepository } from '@nestjs/typeorm';
 import { Observable, Subject, defer, filter, from, map, merge, concat, interval } from 'rxjs';
 import { In, Repository } from 'typeorm';
-import { EVENTS, EventBus, EventEnvelope, ProductCategory, ProductionRequestedPayload, envBool, envInt } from '@sfmc/common';
+import { EVENTS, EventBus, EventEnvelope, Outbox, ProductCategory, ProductionRequestedPayload, envBool, envInt } from '@sfmc/common';
 import { Machine, WorkOrder } from './entities';
 import { PlanEntry, buildPlan, durationMs, priorityScore } from './planning';
 
@@ -33,6 +33,7 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
     @InjectRepository(Machine) private readonly machines: Repository<Machine>,
     @InjectRepository(WorkOrder) private readonly workOrders: Repository<WorkOrder>,
     private readonly bus: EventBus,
+    private readonly outbox: Outbox,
   ) {}
 
   private get speed() {
@@ -80,7 +81,9 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
   async onProductionRequested(p: ProductionRequestedPayload) {
     const reason = await this.rejectionReason(p.category, p.quantity);
     if (reason) {
-      await this.bus.publish(EVENTS.ProductionFailed, { orderId: p.orderId, productId: p.productId, reason });
+      await this.outbox.run(async (_m, events) => {
+        events.push({ type: EVENTS.ProductionFailed, payload: { orderId: p.orderId, productId: p.productId, reason } });
+      });
       return;
     }
     if (await this.workOrders.exists({ where: { orderId: p.orderId, productId: p.productId } })) return; // rejeu
@@ -253,22 +256,25 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
       if (Date.now() - wo.updatedAt.getTime() < this.qualitySeconds * 1000) continue;
       const passed = Math.random() >= this.qualityFailRate;
       const notes = passed ? 'Lot conforme' : 'Lot non conforme : rebut';
-      const res = await this.workOrders.update(
-        { id: wo.id, status: 'QUALITY_CHECK' },
-        passed
-          ? { status: 'COMPLETED', qualityResult: 'PASSED', qualityNotes: notes, qualityCheckedAt: new Date(), completedAt: new Date() }
-          : { status: 'FAILED', qualityResult: 'FAILED', qualityNotes: notes, qualityCheckedAt: new Date() },
-      );
-      if (!res.affected) continue;
+      // Résultat du contrôle et événement associé dans la même transaction (outbox)
+      const applied = await this.outbox.run(async (m, events) => {
+        const res = await m.update(
+          WorkOrder,
+          { id: wo.id, status: 'QUALITY_CHECK' },
+          passed
+            ? { status: 'COMPLETED', qualityResult: 'PASSED', qualityNotes: notes, qualityCheckedAt: new Date(), completedAt: new Date() }
+            : { status: 'FAILED', qualityResult: 'FAILED', qualityNotes: notes, qualityCheckedAt: new Date() },
+        );
+        if (!res.affected) return false; // traité par une autre instance
+        if (passed) events.push({ type: EVENTS.ProductionCompleted, payload: { workOrderId: wo.id, orderId: wo.orderId ?? undefined, productId: wo.productId, productName: wo.productName, quantity: wo.quantity, machineId: wo.machineId ?? '' } });
+        else if (wo.orderId) events.push({ type: EVENTS.ProductionFailed, payload: { orderId: wo.orderId, productId: wo.productId, reason: notes } });
+        return true;
+      });
+      if (!applied) continue;
       const machine = wo.machineId ? await this.machines.findOne({ where: { id: wo.machineId } }) : null;
       this.progress$.next(this.toEvent({ ...wo, status: passed ? 'COMPLETED' : 'FAILED', progress: 100 }, machine?.name ?? null));
-      if (passed) {
-        await this.bus.publish(EVENTS.ProductionCompleted, { workOrderId: wo.id, orderId: wo.orderId ?? undefined, productId: wo.productId, productName: wo.productName, quantity: wo.quantity, machineId: wo.machineId ?? '' });
-        this.log.log(`Ordre ${wo.id} conforme (${wo.quantity} × ${wo.productName})`);
-      } else {
-        if (wo.orderId) await this.bus.publish(EVENTS.ProductionFailed, { orderId: wo.orderId, productId: wo.productId, reason: notes });
-        this.log.warn(`Ordre ${wo.id} rejeté au contrôle qualité`);
-      }
+      if (passed) this.log.log(`Ordre ${wo.id} conforme (${wo.quantity} × ${wo.productName})`);
+      else this.log.warn(`Ordre ${wo.id} rejeté au contrôle qualité`);
     }
   }
 

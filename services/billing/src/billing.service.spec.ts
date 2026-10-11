@@ -27,9 +27,26 @@ function setup() {
     }),
   };
   const ds: any = { query: jest.fn(async (q: string) => (q.includes('nextval') ? [{ nextval: '7' }] : [])) };
-  const bus: any = { publish: jest.fn(async (type: string, p: any) => published.push({ type, p })) };
+  const bus: any = {};
+  // EntityManager de transaction : délègue au faux dépôt
+  const manager: any = {
+    query: ds.query,
+    create: (_e: any, v: any) => repo.create(v),
+    save: (v: any) => repo.save(v),
+    update: (_e: any, cond: any, patch: any) => repo.update(cond, patch),
+    findOneOrFail: (_e: any, opts: any) => repo.findOneOrFail(opts),
+  };
+  // Outbox : les événements ne sont « publiés » que si la transaction réussit
+  const outbox: any = {
+    run: jest.fn(async (fn: any) => {
+      const events: { type: string; payload: any }[] = [];
+      const result = await fn(manager, events);
+      published.push(...events);
+      return result;
+    }),
+  };
   const payments: any = { charge: jest.fn(async () => ({ reference: 'REF-1' })) };
-  return { svc: new BillingService(repo, ds, bus, payments), rows, published };
+  return { svc: new BillingService(repo, ds, bus, outbox, payments), rows, published };
 }
 
 describe('computeTotals', () => {

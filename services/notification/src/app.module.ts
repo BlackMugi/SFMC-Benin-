@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CommonModule, typeOrmConfig } from '@sfmc/common';
+import { CommonModule, typeOrmConfig, OUTBOX_ENTITIES } from '@sfmc/common';
 import { MIGRATIONS } from './migrations';
 import { Notification, OrderContact } from './entities';
 import { NotificationController } from './notification.controller';
@@ -11,7 +11,7 @@ import { NotificationProvider, createProvider } from './providers';
   imports: [
     CommonModule.forRoot({ serviceName: 'notification-service' }),
     TypeOrmModule.forRootAsync(typeOrmConfig(MIGRATIONS)),
-    TypeOrmModule.forFeature([Notification, OrderContact]),
+    TypeOrmModule.forFeature([Notification, OrderContact, ...OUTBOX_ENTITIES]),
   ],
   controllers: [NotificationController],
   providers: [NotificationService, { provide: NotificationProvider, useFactory: createProvider }],

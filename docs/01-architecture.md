@@ -78,9 +78,44 @@ flowchart TB
 | DDD / bounded contexts | 1 service = 1 domaine (identité, utilisateurs, catalogue, stock, commandes, production, finance, communication, analyse) |
 | Database per service | Chaque service a son propre conteneur PostgreSQL ; aucune requête SQL inter-services |
 | Sync (REST) | Order → Product (prix), Order → Inventory (disponibilité), Auth → User (identifiants) ; résolus via Consul |
-| Async (RabbitMQ) | Tous les changements d'état métier sont publiés en événements ; consommateurs idempotents, ré-essais puis dead-letter |
+| Async (RabbitMQ) | Tous les changements d'état métier sont publiés en événements via une **outbox transactionnelle** ; consommateurs dédupliqués par identifiant d'événement, ré-essais puis dead-letter |
 | Sécurité | JWT vérifié à la Gateway **et** dans chaque service (défense en profondeur) ; RBAC par `@Roles()` |
 | Observabilité | `/health`, `/metrics`, logs JSON avec `correlationId` propagé en HTTP (`x-correlation-id`) et dans les événements |
+
+## Publication fiable des événements (outbox)
+
+Un service ne publie jamais directement sur RabbitMQ. Le changement d'état et les événements qu'il produit sont écrits **dans la même transaction** PostgreSQL (table `outbox`) : soit les deux existent, soit aucun. Un relais, dans chaque instance du service, publie ensuite les lignes en attente dans l'ordre, avec confirmation du broker, et ne les marque publiées qu'après cette confirmation.
+
+```mermaid
+sequenceDiagram
+    participant API as Requête ou événement entrant
+    participant S as Service (ex. Order)
+    participant DB as Base du service
+    participant R as Relais outbox
+    participant MQ as RabbitMQ
+    participant C as Consommateur (ex. Inventory)
+    API->>S: action métier
+    S->>DB: BEGIN
+    S->>DB: UPDATE/INSERT état métier
+    S->>DB: INSERT INTO outbox (event_id, type, payload)
+    S->>DB: COMMIT (tout ou rien)
+    R->>DB: SELECT ... WHERE published_at IS NULL FOR UPDATE SKIP LOCKED
+    R->>MQ: publish (confirm)
+    MQ-->>R: ack
+    R->>DB: UPDATE outbox SET published_at = now()
+    MQ->>C: livraison (au moins une fois)
+    C->>C: event_id déjà dans processed_events ? → ignoré
+    C->>C: sinon traitement, puis INSERT processed_events
+```
+
+| Situation | Comportement |
+|---|---|
+| RabbitMQ arrêté | Les requêtes sont acceptées ; les événements attendent dans l'outbox (`/health` : `degraded`, `outboxPending`) et partent au retour du broker |
+| Crash du service après le commit | L'événement est en base ; le relais le publie au redémarrage (ou une autre réplique le fait) |
+| Crash entre la publication et le marquage | L'événement est republié : le consommateur le reconnaît par son identifiant et l'ignore |
+| Plusieurs répliques | `FOR UPDATE SKIP LOCKED` : chaque ligne est relayée par une seule instance à la fois |
+
+Purge : lignes publiées et traces de déduplication supprimées après `OUTBOX_RETENTION_DAYS` (7 jours par défaut).
 
 ## Catalogue d'événements
 

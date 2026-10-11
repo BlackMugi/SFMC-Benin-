@@ -4,6 +4,7 @@ import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import {
   EVENTS,
   EventBus,
+  Outbox,
   EventEnvelope,
   EventType,
   OrderCancelledPayload,
@@ -38,6 +39,7 @@ export class InventoryService implements OnModuleInit {
     @InjectRepository(Stock) private readonly stocks: Repository<Stock>,
     @InjectRepository(StockMovement) private readonly movements: Repository<StockMovement>,
     private readonly bus: EventBus,
+    private readonly outbox: Outbox,
   ) {}
 
   async onModuleInit() {
@@ -73,24 +75,22 @@ export class InventoryService implements OnModuleInit {
 
   /** Tente de réserver atomiquement tous les articles de la commande. */
   private async onOrderCreated(p: OrderCreatedPayload) {
-    const pending: Pending[] = [];
     const items = mergeItems(p.items.map((i) => ({ productId: i.productId, quantity: i.quantity })));
-    const outcome = await this.ds.transaction(async (m): Promise<AllocationOutcome> => {
+    await this.outbox.run(async (m, pending) => {
       await m.createQueryBuilder().insert().into(Reservation).values({ orderId: p.orderId, items, status: 'PENDING', allocations: [] }).orIgnore().execute();
       const res = await m.findOneOrFail(Reservation, { where: { orderId: p.orderId }, lock: { mode: 'pessimistic_write' } });
-      if (res.status === 'RESERVED') return { kind: 'reserved', allocations: res.allocations }; // rejeu : ré-émet StockReserved
-      if (res.status !== 'PENDING') return { kind: 'ignored' };
-      return this.attemptAllocation(m, res, pending);
+      let outcome: AllocationOutcome;
+      if (res.status === 'RESERVED') outcome = { kind: 'reserved', allocations: res.allocations }; // rejeu : ré-émet StockReserved
+      else if (res.status !== 'PENDING') outcome = { kind: 'ignored' };
+      else outcome = await this.attemptAllocation(m, res, pending);
+      if (outcome.kind === 'reserved') pending.push({ type: EVENTS.StockReserved, payload: { orderId: p.orderId, allocations: outcome.allocations } });
+      else if (outcome.kind === 'insufficient') pending.push({ type: EVENTS.StockInsufficient, payload: { orderId: p.orderId, shortages: outcome.shortages } });
     });
-    await this.flush(pending);
-    if (outcome.kind === 'reserved') await this.bus.publish(EVENTS.StockReserved, { orderId: p.orderId, allocations: outcome.allocations });
-    else if (outcome.kind === 'insufficient') await this.bus.publish(EVENTS.StockInsufficient, { orderId: p.orderId, shortages: outcome.shortages });
   }
 
   /** Production terminée : entrée de stock, puis nouvelle tentative de réservation pour la commande en attente. */
   private async onProductionCompleted(p: ProductionCompletedPayload) {
-    const pending: Pending[] = [];
-    await this.ds.transaction(async (m) => {
+    await this.outbox.run(async (m, pending) => {
       const reference = `wo:${p.workOrderId}`;
       if (await m.exists(StockMovement, { where: { reference } })) return; // idempotence
       const wh = await m.findOneOrFail(Warehouse, { where: { code: env('DEFAULT_WAREHOUSE_CODE', 'COTONOU') } });
@@ -102,13 +102,11 @@ export class InventoryService implements OnModuleInit {
       const outcome = await this.attemptAllocation(m, res, pending);
       if (outcome.kind === 'reserved') pending.push({ type: EVENTS.StockReserved, payload: { orderId: p.orderId, allocations: outcome.allocations } });
     });
-    await this.flush(pending);
   }
 
   /** Compensation : libère la réservation d'une commande rejetée ou annulée. */
   async release(orderId: string) {
-    const pending: Pending[] = [];
-    await this.ds.transaction(async (m) => {
+    await this.outbox.run(async (m, pending) => {
       await m.createQueryBuilder().insert().into(Reservation).values({ orderId, items: [], status: 'PENDING', allocations: [] }).orIgnore().execute();
       const res = await m.findOneOrFail(Reservation, { where: { orderId }, lock: { mode: 'pessimistic_write' } });
       if (res.status === 'RELEASED' || res.status === 'CONSUMED') return;
@@ -124,13 +122,11 @@ export class InventoryService implements OnModuleInit {
       await m.save(res);
       pending.push({ type: EVENTS.StockReleased, payload: { orderId } });
     });
-    await this.flush(pending);
   }
 
   /** Expédition : la réservation devient une sortie de stock (vente). */
   private async onOrderShipped(p: OrderShippedPayload) {
-    const pending: Pending[] = [];
-    await this.ds.transaction(async (m) => {
+    await this.outbox.run(async (m, pending) => {
       const res = await m.findOne(Reservation, { where: { orderId: p.orderId }, lock: { mode: 'pessimistic_write' } });
       if (res?.status !== 'RESERVED') return;
       for (const a of [...res.allocations].sort((x, y) => x.productId.localeCompare(y.productId))) {
@@ -145,7 +141,6 @@ export class InventoryService implements OnModuleInit {
       res.status = 'CONSUMED';
       await m.save(res);
     });
-    await this.flush(pending);
   }
 
   // ------------------------------------------------------------------ Cœur : allocation, mouvements, seuil critique
@@ -220,28 +215,21 @@ export class InventoryService implements OnModuleInit {
     }
   }
 
-  private async flush(pending: Pending[]) {
-    for (const e of pending) await this.bus.publish(e.type, e.payload);
-  }
-
   // ------------------------------------------------------------------ API
 
   async move(dto: MovementDto) {
-    const pending: Pending[] = [];
-    const stock = await this.ds.transaction(async (m) => {
+    const stock = await this.outbox.run(async (m, pending) => {
       await this.assertWarehouse(m, dto.warehouseId);
       const s = await this.lockStock(m, dto.productId, dto.warehouseId);
       await this.applyMovement(m, s, dto.type, dto.quantity, dto.reason, pending);
       return s;
     });
-    await this.flush(pending);
     return stock;
   }
 
   async transfer(dto: TransferDto) {
     if (dto.fromWarehouseId === dto.toWarehouseId) throw new BadRequestException('Entrepôts source et destination identiques');
-    const pending: Pending[] = [];
-    await this.ds.transaction(async (m) => {
+    await this.outbox.run(async (m, pending) => {
       await this.assertWarehouse(m, dto.fromWarehouseId);
       await this.assertWarehouse(m, dto.toWarehouseId);
       const [firstId, secondId] = [dto.fromWarehouseId, dto.toWarehouseId].sort();
@@ -251,7 +239,6 @@ export class InventoryService implements OnModuleInit {
       await this.applyMovement(m, from, 'OUT', dto.quantity, 'TRANSFER', pending);
       await this.applyMovement(m, to, 'IN', dto.quantity, 'TRANSFER', pending);
     });
-    await this.flush(pending);
     return { status: 'ok' };
   }
 

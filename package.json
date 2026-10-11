@@ -22,7 +22,8 @@
     "load:ha": "node scripts/load-test.mjs --kill order-service",
     "lint": "eslint services packages",
     "migration:generate": "node scripts/migration-generate.mjs",
-    "test:migrations": "node scripts/migration-test.mjs"
+    "test:migrations": "node scripts/migration-test.mjs",
+    "test:resilience": "jest --config tests/resilience/jest.config.js --runInBand"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

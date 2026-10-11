@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CommonModule, typeOrmConfig } from '@sfmc/common';
+import { CommonModule, typeOrmConfig, OUTBOX_ENTITIES } from '@sfmc/common';
 import { MIGRATIONS } from './migrations';
 import { Reservation, Stock, StockMovement, Warehouse } from './entities';
 import { InventoryController } from './inventory.controller';
@@ -10,7 +10,7 @@ import { InventoryService } from './inventory.service';
   imports: [
     CommonModule.forRoot({ serviceName: 'inventory-service' }),
     TypeOrmModule.forRootAsync(typeOrmConfig(MIGRATIONS)),
-    TypeOrmModule.forFeature([Warehouse, Stock, StockMovement, Reservation]),
+    TypeOrmModule.forFeature([Warehouse, Stock, StockMovement, Reservation, ...OUTBOX_ENTITIES]),
   ],
   controllers: [InventoryController],
   providers: [InventoryService],

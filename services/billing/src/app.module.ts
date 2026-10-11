@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CommonModule, typeOrmConfig } from '@sfmc/common';
+import { CommonModule, typeOrmConfig, OUTBOX_ENTITIES } from '@sfmc/common';
 import { MIGRATIONS } from './migrations';
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
@@ -11,7 +11,7 @@ import { MockPaymentProvider, PaymentProvider } from './payment.provider';
   imports: [
     CommonModule.forRoot({ serviceName: 'billing-service' }),
     TypeOrmModule.forRootAsync(typeOrmConfig(MIGRATIONS)),
-    TypeOrmModule.forFeature([Invoice]),
+    TypeOrmModule.forFeature([Invoice, ...OUTBOX_ENTITIES]),
   ],
   controllers: [BillingController],
   // Remplacer MockPaymentProvider par une implémentation réelle (Mobile Money, carte...)

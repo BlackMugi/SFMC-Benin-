@@ -61,7 +61,9 @@ Si le stock manque : `StockInsufficient` → Order publie `ProductionRequested` 
 
 **Compensations** : `ProductionFailed` → commande `rejected` → `OrderRejected` → Inventory libère la réservation (`StockReleased`), Billing annule la facture ; annulation client → `OrderCancelled` (mêmes effets) ; si `StockReserved` arrive après une annulation, Order republie `OrderCancelled` (libération idempotente).
 
-Garanties : consommateurs idempotents (clés d'unicité, compare-and-set), 3 ré-essais puis file `sfmc.dead-letters`, verrous `FOR UPDATE` ordonnés (pas d'interblocage), cohérence éventuelle.
+Garanties : **outbox transactionnelle** (changement d'état et événement enregistrés ensemble, aucun événement perdu même si RabbitMQ est arrêté ou si un service plante), consommateurs dédupliqués par identifiant d'événement (table `processed_events`) en plus de leur idempotence métier (clés d'unicité, compare-and-set), 3 ré-essais puis file `sfmc.dead-letters`, verrous `FOR UPDATE` ordonnés (pas d'interblocage), cohérence éventuelle.
+
+Preuve : `npm run test:resilience` arrête RabbitMQ, passe une commande, tue `order-service`, redémarre le tout et vérifie que la commande est validée et facturée, puis renvoie un événement déjà traité et vérifie qu'il est ignoré. Ce test provoque de vraies pannes : à lancer sur la plateforme de développement uniquement.
 
 ### Seuil critique (Inventory)
 

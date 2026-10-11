@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import * as amqp from 'amqplib';
-import { randomUUID } from 'node:crypto';
+import { DataSource } from 'typeorm';
 import { env } from './config';
-import { getCorrelationId, runWithContext } from './context';
+import { runWithContext } from './context';
 import { EventEnvelope, EventType } from './events';
 import { MetricsService } from './metrics';
 import { SFMC_OPTIONS, SfmcOptions } from './options';
@@ -18,7 +19,9 @@ interface Subscription { queue: string; types: EventType[]; handler: Handler }
  * Bus d'événements RabbitMQ (exchange topic, clé de routage = type d'événement).
  * - une file durable par (service, usage) : plusieurs instances = consommateurs concurrents ;
  * - ré-essais bornés puis dead-letter (sfmc.dead-letters) ;
- * - correlation-id propagé dans l'enveloppe et restauré dans le contexte du consommateur.
+ * - correlation-id propagé dans l'enveloppe et restauré dans le contexte du consommateur ;
+ * - publication uniquement via l'Outbox (transactionnelle) ; réception dédupliquée par identifiant d'événement
+ *   (table processed_events) : un événement livré plusieurs fois n'est traité qu'une fois par file.
  */
 @Injectable()
 export class EventBus implements OnApplicationShutdown {
@@ -29,7 +32,13 @@ export class EventBus implements OnApplicationShutdown {
   private closing = false;
   private connecting?: Promise<void>;
 
-  constructor(@Inject(SFMC_OPTIONS) private readonly options: SfmcOptions, private readonly metrics: MetricsService) {}
+  private ds?: DataSource | null;
+
+  constructor(
+    @Inject(SFMC_OPTIONS) private readonly options: SfmcOptions,
+    private readonly metrics: MetricsService,
+    private readonly moduleRef: ModuleRef,
+  ) {}
 
   isConnected() {
     return !!this.channel;
@@ -71,28 +80,27 @@ export class EventBus implements OnApplicationShutdown {
     }
   }
 
-  async publish<T>(type: EventType, payload: T): Promise<EventEnvelope<T>> {
-    await this.connect();
-    const envelope: EventEnvelope<T> = {
-      id: randomUUID(),
-      type,
-      occurredAt: new Date().toISOString(),
-      correlationId: getCorrelationId() ?? randomUUID(),
-      source: this.options.serviceName,
-      payload,
-    };
+  /**
+   * Publie une enveloppe déjà construite (appelé par le relais de l'Outbox). Échoue immédiatement si le broker est
+   * indisponible : l'événement reste dans l'outbox et sera ré-essayé, sans bloquer la transaction du relais.
+   */
+  async publishEnvelope(envelope: EventEnvelope): Promise<void> {
+    const ch = this.channel;
+    if (!ch) {
+      void this.connect().catch(() => undefined);
+      throw new Error('RabbitMQ non connecté');
+    }
     await new Promise<void>((resolve, reject) => {
-      this.channel!.publish(
+      ch.publish(
         EXCHANGE,
-        type,
+        envelope.type,
         Buffer.from(JSON.stringify(envelope)),
-        { persistent: true, contentType: 'application/json', messageId: envelope.id, correlationId: envelope.correlationId, type },
+        { persistent: true, contentType: 'application/json', messageId: envelope.id, correlationId: envelope.correlationId, type: envelope.type },
         (err) => (err ? reject(err) : resolve()),
       );
     });
-    this.metrics.eventsPublished.inc({ type });
-    this.log.log(`Événement publié : ${type}`);
-    return envelope;
+    this.metrics.eventsPublished.inc({ type: envelope.type });
+    this.log.log(`Événement publié : ${envelope.type}`);
   }
 
   /** Déclare une file et la lie aux types demandés. À appeler depuis onModuleInit. */
@@ -125,7 +133,13 @@ export class EventBus implements OnApplicationShutdown {
     }
     await runWithContext(event.correlationId, async () => {
       try {
+        if (await this.alreadyProcessed(event.id, queue)) {
+          this.log.log(`Doublon ignoré : ${event.type} ${event.id}`);
+          ch.ack(msg);
+          return;
+        }
         await handler(event);
+        await this.markProcessed(event.id, queue);
         this.metrics.eventsConsumed.inc({ type: event.type });
         ch.ack(msg);
       } catch (e) {
@@ -143,6 +157,30 @@ export class EventBus implements OnApplicationShutdown {
         }
       }
     });
+  }
+
+  private dataSource(): DataSource | null {
+    if (this.ds === undefined) {
+      try {
+        this.ds = this.moduleRef.get(DataSource, { strict: false });
+      } catch {
+        this.ds = null; // service sans base : pas de déduplication persistante
+      }
+    }
+    return this.ds;
+  }
+
+  private async alreadyProcessed(eventId: string, consumer: string): Promise<boolean> {
+    const ds = this.dataSource();
+    if (!ds || !eventId) return false;
+    const rows = await ds.query('SELECT 1 FROM processed_events WHERE event_id = $1 AND consumer = $2', [eventId, consumer]);
+    return rows.length > 0;
+  }
+
+  private async markProcessed(eventId: string, consumer: string) {
+    const ds = this.dataSource();
+    if (!ds || !eventId) return;
+    await ds.query('INSERT INTO processed_events (event_id, consumer) VALUES ($1, $2) ON CONFLICT DO NOTHING', [eventId, consumer]);
   }
 
   async onApplicationShutdown() {

@@ -49,9 +49,16 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 - Preuve : `npm run test:migrations` : 63 contrôles sur 63 (up, schéma = entités, down complet, up à nouveau, baseline sans perte). Sur la plateforme existante : 9 baselines, 13 commandes avant et après.
 - Défaut trouvé au passage : la compilation incrémentale de TypeScript (cache `tsbuildinfo` hors de `dist/`, que `nest build` vide) produisait des `dist/` incomplets en local. Compilation incrémentale désactivée.
 
+### Outbox transactionnelle (objectif 2)
+- Toutes les publications (Order, Inventory, Billing, Production : 17 points de publication) passent par `Outbox.run()` : état métier et événements dans la même transaction. La publication directe a été retirée du bus.
+- Relais par instance (`FOR UPDATE SKIP LOCKED`, ordre conservé, échec immédiat si le broker est absent pour ne pas tenir de verrous), purge après 7 jours.
+- Consommateurs : déduplication par identifiant d'événement (`processed_events`) en plus de l'idempotence métier existante.
+- `/health` : le broker n'est plus bloquant (`degraded` au lieu de 503), nombre d'événements en attente exposé (`outboxPending`).
+- Preuve : `npm run test:resilience` (2/2) : broker arrêté + crash de `order-service` → commande validée et facturée après redémarrage, aucune ligne restée en attente ; doublon renvoyé à la main → ignoré, aucune réservation en plus.
+- Limite : un consommateur qui plante **après** son traitement mais **avant** d'enregistrer l'identifiant retraitera l'événement ; c'est sans effet car chaque traitement est lui-même idempotent (compare-and-set, clés d'unicité), mais ce n'est pas une garantie « exactement une fois » au sens strict.
+
 ## 5. Limites assumées (hors périmètre de la démonstration)
 
-- *Outbox* : pas implémentée ; un crash entre la sauvegarde et la publication d'un événement peut le perdre.
 - JWT en HS256 avec secret partagé : passer à RS256 + JWKS pour isoler la clé de signature.
 - Consul en mode `-dev`, RabbitMQ et PostgreSQL en instance unique : pas de haute disponibilité de l'infrastructure elle-même.
 - Rate limit compté par instance de gateway.

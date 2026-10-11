@@ -42,7 +42,8 @@ await withTempPostgres(async (connect) => {
     }
 
     // 4 : base existante créée par synchronize (comme avant les migrations) avec un marqueur de données
-    const legacy = new DataSource({ ...(await connect(`${service}_legacy`)), entities, synchronize: true });
+    const legacyEntities = entities.filter((e) => !['OutboxEvent', 'ProcessedEvent'].includes(e.name)); // ces tables n'existaient pas avant
+    const legacy = new DataSource({ ...(await connect(`${service}_legacy`)), entities: legacyEntities, synchronize: true });
     await legacy.initialize();
     await legacy.query(`CREATE TABLE baseline_marker (v int)`);
     await legacy.query(`INSERT INTO baseline_marker VALUES (42)`);
@@ -50,13 +51,13 @@ await withTempPostgres(async (connect) => {
     const ds2 = new DataSource({ ...(await connect(`${service}_legacy`)), entities, migrations, migrationsTableName: 'migrations' });
     await ds2.initialize();
     try {
-      const before = (await businessTables(ds2)).sort().join(',');
+      const before = await businessTables(ds2);
       await runMigrations(ds2);
       const recorded = await ds2.query(`SELECT name FROM migrations`);
       check(service, 'baseline base existante', recorded.length === migrations.length, recorded.map((r) => r.name).join(', '));
-      const after = (await businessTables(ds2)).sort().join(',');
+      const after = new Set(await businessTables(ds2));
       const marker = (await ds2.query(`SELECT v FROM baseline_marker`))[0]?.v;
-      check(service, 'baseline sans perte', before === after && marker === 42);
+      check(service, 'baseline sans perte', before.every((tb) => after.has(tb)) && marker === 42);
     } finally {
       await ds2.destroy();
     }

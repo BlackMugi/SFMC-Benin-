@@ -36,16 +36,26 @@ export class HealthController {
         checks.database = 'down';
       }
     }
+    let outboxPending: number | undefined;
     if (this.options.events !== false) {
       checks.broker = this.moduleRef.get(EventBus, { strict: false }).isConnected() ? 'up' : 'down';
+      if (ds && checks.database === 'up') {
+        try {
+          const [row] = await ds.query('SELECT count(*)::int AS n FROM outbox WHERE published_at IS NULL');
+          outboxPending = row.n;
+        } catch {
+          /* table absente : service sans outbox */
+        }
+      }
     }
     if (this.options.consul !== false) {
       checks.consul = (await this.moduleRef.get(ConsulService, { strict: false }).ping()) ? 'up' : 'down';
     }
-    // La disponibilité dépend de la base et du broker ; Consul est surveillé mais non bloquant.
-    const ok = checks.database !== 'down' && checks.broker !== 'down';
-    if (!ok) res.status(503);
-    return { status: ok ? 'ok' : 'degraded', service: this.options.serviceName, uptime: Math.round(process.uptime()), checks };
+    // Seule la base est bloquante. Broker absent : le service reste disponible (les événements attendent dans
+    // l'outbox et partiront à son retour) mais est signalé « degraded ». Consul est surveillé, non bloquant.
+    if (checks.database === 'down') res.status(503);
+    const status = checks.database === 'down' ? 'down' : Object.values(checks).includes('down') ? 'degraded' : 'ok';
+    return { status, service: this.options.serviceName, uptime: Math.round(process.uptime()), checks, ...(outboxPending !== undefined ? { outboxPending } : {}) };
   }
 
   @Public()

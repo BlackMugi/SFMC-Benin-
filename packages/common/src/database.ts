@@ -66,7 +66,9 @@ async function baselineLegacySchema(ds: DataSource, log: Logger) {
   if (!initial) return;
   const [{ exists: hasMigrationsTable }] = await ds.query(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`public.${MIGRATIONS_TABLE}`]);
   if (hasMigrationsTable) return;
-  const tables = ds.entityMetadatas.filter((m) => m.tableType === 'regular').map((m) => m.tableName);
+  // Tables antérieures aux migrations (l'outbox et la déduplication sont arrivées ensuite, par migration)
+  const later = new Set(['outbox', 'processed_events']);
+  const tables = ds.entityMetadatas.filter((m) => m.tableType === 'regular' && !later.has(m.tableName)).map((m) => m.tableName);
   if (!tables.length) return;
   const [{ count }] = await ds.query(`SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ANY($1)`, [tables]);
   if (count === 0) return; // base vide : la migration initiale va tout créer

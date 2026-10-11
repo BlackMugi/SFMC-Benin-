@@ -1,11 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import {
   AuthUser,
   EVENTS,
   EventBus,
   EventEnvelope,
+  Outbox,
   OrderLine,
   ProductCategory,
   Role,
@@ -35,6 +36,7 @@ export class OrdersService implements OnModuleInit {
     @InjectRepository(Order) private readonly orders: Repository<Order>,
     @InjectRepository(OrderHistory) private readonly history: Repository<OrderHistory>,
     private readonly bus: EventBus,
+    private readonly outbox: Outbox,
     private readonly services: ServiceClient,
   ) {}
 
@@ -73,31 +75,28 @@ export class OrdersService implements OnModuleInit {
     }
 
     const total = Math.round(items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0) * 100) / 100;
-    const order = await this.orders.save(
-      this.orders.create({
-        customerId: user.id,
-        customerEmail: user.email ?? null,
-        status: 'pending',
-        phase: 'awaiting_stock',
-        items,
-        total,
-        urgency: dto.urgency ?? 3,
-        requiredBy: dto.requiredBy ? new Date(dto.requiredBy) : null,
-        stockCheck,
-        rejectionReason: null,
-        invoiceId: null,
-      }),
-    );
-    await this.note(order.id, 'pending', 'Commande créée');
-    try {
-      await this.bus.publish(EVENTS.OrderCreated, { ...this.ref(order), items, total, urgency: order.urgency, requiredBy: order.requiredBy?.toISOString() });
-    } catch (e) {
-      this.log.error(`Publication de OrderCreated impossible : ${(e as Error).message}`);
-      // Compensation : sans événement, la saga ne démarrera jamais -> on ne laisse pas une commande orpheline.
-      await this.orders.update({ id: order.id }, { status: 'rejected', phase: 'closed', rejectionReason: 'Broker indisponible' });
-      throw new ServiceUnavailableException('Traitement de commande indisponible, réessayez');
-    }
-    return order;
+    // Commande, historique et OrderCreated écrits dans la même transaction (outbox) : la saga démarre forcément,
+    // même si RabbitMQ est momentanément indisponible.
+    return this.outbox.run(async (m, events) => {
+      const order = await m.save(
+        m.create(Order, {
+          customerId: user.id,
+          customerEmail: user.email ?? null,
+          status: 'pending',
+          phase: 'awaiting_stock',
+          items,
+          total,
+          urgency: dto.urgency ?? 3,
+          requiredBy: dto.requiredBy ? new Date(dto.requiredBy) : null,
+          stockCheck,
+          rejectionReason: null,
+          invoiceId: null,
+        }),
+      );
+      await this.note(m, order.id, 'pending', 'Commande créée');
+      events.push({ type: EVENTS.OrderCreated, payload: { ...this.ref(order), items, total, urgency: order.urgency, requiredBy: order.requiredBy?.toISOString() } });
+      return order;
+    });
   }
 
   list(user: AuthUser, status?: OrderStatus) {
@@ -121,23 +120,27 @@ export class OrdersService implements OnModuleInit {
 
   async cancel(id: string, user: AuthUser, reason = 'Annulée par le client'): Promise<Order> {
     const order = await this.get(id, user);
-    const moved = await this.transition(id, 'cancelled', { phase: 'closed', rejectionReason: reason });
-    if (!moved) throw new BadRequestException(`Annulation impossible depuis le statut « ${order.status} »`);
-    await this.note(id, 'cancelled', reason);
-    const fresh = await this.orders.findOneOrFail({ where: { id } });
-    await this.bus.publish(EVENTS.OrderCancelled, { ...this.ref(fresh), reason });
-    return fresh;
+    return this.outbox.run(async (m, events) => {
+      const moved = await this.transition(m, id, 'cancelled', { phase: 'closed', rejectionReason: reason });
+      if (!moved) throw new BadRequestException(`Annulation impossible depuis le statut « ${order.status} »`);
+      await this.note(m, id, 'cancelled', reason);
+      const fresh = await m.findOneOrFail(Order, { where: { id } });
+      events.push({ type: EVENTS.OrderCancelled, payload: { ...this.ref(fresh), reason } });
+      return fresh;
+    });
   }
 
   async ship(id: string): Promise<Order> {
     const order = await this.orders.findOne({ where: { id } });
     if (!order) throw new NotFoundException('Commande introuvable');
-    const moved = await this.transition(id, 'shipped', { phase: 'shipped' });
-    if (!moved) throw new BadRequestException(`Expédition impossible depuis le statut « ${order.status} » (commande validée requise)`);
-    await this.note(id, 'shipped', 'Commande expédiée');
-    const fresh = await this.orders.findOneOrFail({ where: { id } });
-    await this.bus.publish(EVENTS.OrderShipped, { ...this.ref(fresh), items: fresh.items });
-    return fresh;
+    return this.outbox.run(async (m, events) => {
+      const moved = await this.transition(m, id, 'shipped', { phase: 'shipped' });
+      if (!moved) throw new BadRequestException(`Expédition impossible depuis le statut « ${order.status} » (commande validée requise)`);
+      await this.note(m, id, 'shipped', 'Commande expédiée');
+      const fresh = await m.findOneOrFail(Order, { where: { id } });
+      events.push({ type: EVENTS.OrderShipped, payload: { ...this.ref(fresh), items: fresh.items } });
+      return fresh;
+    });
   }
 
   // ------------------------------------------------------------------ Saga (chorégraphie)
@@ -159,73 +162,88 @@ export class OrdersService implements OnModuleInit {
 
   /** Stock réservé -> commande validée (fin heureuse de la saga). */
   async onStockReserved(orderId: string) {
-    const order = await this.orders.findOne({ where: { id: orderId } });
-    if (!order) return;
-    if (order.status === 'cancelled' || order.status === 'rejected') {
-      // Compensation tardive : la réservation est arrivée après l'annulation -> on redemande la libération (idempotente).
-      const type = order.status === 'cancelled' ? EVENTS.OrderCancelled : EVENTS.OrderRejected;
-      await this.bus.publish(type, { ...this.ref(order), reason: order.rejectionReason ?? 'Commande clôturée' });
-      return;
-    }
-    if (!(await this.transition(orderId, 'validated', { phase: 'validated' }))) return; // déjà validée (rejeu)
-    await this.note(orderId, 'validated', 'Stock réservé, commande validée');
-    const fresh = await this.orders.findOneOrFail({ where: { id: orderId } });
-    await this.bus.publish(EVENTS.OrderValidated, { ...this.ref(fresh), items: fresh.items, total: fresh.total });
+    await this.outbox.run(async (m, events) => {
+      const order = await m.findOne(Order, { where: { id: orderId } });
+      if (!order) return;
+      if (order.status === 'cancelled' || order.status === 'rejected') {
+        // Compensation tardive : la réservation est arrivée après l'annulation -> on redemande la libération (idempotente).
+        const type = order.status === 'cancelled' ? EVENTS.OrderCancelled : EVENTS.OrderRejected;
+        events.push({ type, payload: { ...this.ref(order), reason: order.rejectionReason ?? 'Commande clôturée' } });
+        return;
+      }
+      if (!(await this.transition(m, orderId, 'validated', { phase: 'validated' }))) return; // déjà validée (rejeu)
+      await this.note(m, orderId, 'validated', 'Stock réservé, commande validée');
+      const fresh = await m.findOneOrFail(Order, { where: { id: orderId } });
+      events.push({ type: EVENTS.OrderValidated, payload: { ...this.ref(fresh), items: fresh.items, total: fresh.total } });
+    });
   }
 
   /** Stock insuffisant -> déclenche la production des quantités manquantes. */
   async onStockInsufficient(p: StockInsufficientPayload) {
-    const order = await this.orders.findOne({ where: { id: p.orderId } });
-    if (!order || order.status !== 'pending') return;
-    const res = await this.orders.update({ id: order.id, phase: 'awaiting_stock' }, { phase: 'awaiting_production' });
-    if (!res.affected) return; // rejeu
-    await this.note(order.id, 'pending', `Stock insuffisant (${p.shortages.map((s) => `${s.missing} manquant(s)`).join(', ')}) : production demandée`);
-    for (const s of p.shortages) {
-      const line = order.items.find((i) => i.productId === s.productId);
-      if (!line) continue;
-      await this.bus.publish(EVENTS.ProductionRequested, {
-        orderId: order.id,
-        productId: line.productId,
-        productName: line.productName,
-        category: line.category,
-        quantity: s.missing,
-        urgency: order.urgency,
-        requiredBy: order.requiredBy?.toISOString(),
-      });
-    }
+    await this.outbox.run(async (m, events) => {
+      const order = await m.findOne(Order, { where: { id: p.orderId } });
+      if (!order || order.status !== 'pending') return;
+      const res = await m.update(Order, { id: order.id, phase: 'awaiting_stock' }, { phase: 'awaiting_production' });
+      if (!res.affected) return; // rejeu
+      await this.note(m, order.id, 'pending', `Stock insuffisant (${p.shortages.map((s) => `${s.missing} manquant(s)`).join(', ')}) : production demandée`);
+      for (const s of p.shortages) {
+        const line = order.items.find((i) => i.productId === s.productId);
+        if (!line) continue;
+        events.push({
+          type: EVENTS.ProductionRequested,
+          payload: {
+            orderId: order.id,
+            productId: line.productId,
+            productName: line.productName,
+            category: line.category,
+            quantity: s.missing,
+            urgency: order.urgency,
+            requiredBy: order.requiredBy?.toISOString(),
+          },
+        });
+      }
+    });
   }
 
   async onProductionCompleted(p: ProductionCompletedPayload) {
     if (!p.orderId) return;
-    await this.orders.update({ id: p.orderId, status: 'pending' }, { phase: 'production_completed' });
-    await this.note(p.orderId, 'pending', `Production terminée : ${p.quantity} × ${p.productName}`);
+    const orderId = p.orderId;
+    await this.outbox.run(async (m) => {
+      await m.update(Order, { id: orderId, status: 'pending' }, { phase: 'production_completed' });
+      await this.note(m, orderId, 'pending', `Production terminée : ${p.quantity} × ${p.productName}`);
+    });
   }
 
   /** Échec de production -> la commande est rejetée ; Inventory libère la réservation (compensation). */
   async onProductionFailed(p: ProductionFailedPayload) {
     if (!p.orderId) return;
     const reason = `Production impossible : ${p.reason}`;
-    if (!(await this.transition(p.orderId, 'rejected', { phase: 'closed', rejectionReason: reason }))) return;
-    await this.note(p.orderId, 'rejected', reason);
-    const order = await this.orders.findOneOrFail({ where: { id: p.orderId } });
-    await this.bus.publish(EVENTS.OrderRejected, { ...this.ref(order), reason });
+    const orderId = p.orderId;
+    await this.outbox.run(async (m, events) => {
+      if (!(await this.transition(m, orderId, 'rejected', { phase: 'closed', rejectionReason: reason }))) return;
+      await this.note(m, orderId, 'rejected', reason);
+      const order = await m.findOneOrFail(Order, { where: { id: orderId } });
+      events.push({ type: EVENTS.OrderRejected, payload: { ...this.ref(order), reason } });
+    });
   }
 
   async onInvoiceIssued(p: InvoiceIssuedPayload) {
-    await this.orders.update({ id: p.orderId }, { invoiceId: p.invoiceId });
-    await this.note(p.orderId, 'validated', `Facture ${p.number} émise`);
+    await this.outbox.run(async (m) => {
+      await m.update(Order, { id: p.orderId }, { invoiceId: p.invoiceId });
+      await this.note(m, p.orderId, 'validated', `Facture ${p.number} émise`);
+    });
   }
 
   // ------------------------------------------------------------------ Helpers
 
   /** Transition atomique (compare-and-set sur le statut source) : sûre en cas de rejeu ou de concurrence. */
-  private async transition(id: string, to: OrderStatus, patch: { phase: OrderPhase; rejectionReason?: string }): Promise<boolean> {
-    const res = await this.orders.update({ id, status: In(sourcesFor(to)) }, { status: to, ...patch });
+  private async transition(m: EntityManager, id: string, to: OrderStatus, patch: { phase: OrderPhase; rejectionReason?: string }): Promise<boolean> {
+    const res = await m.update(Order, { id, status: In(sourcesFor(to)) }, { status: to, ...patch });
     return !!res.affected;
   }
 
-  private note(orderId: string, status: string, note: string) {
-    return this.history.save(this.history.create({ orderId, status, note }));
+  private note(m: EntityManager, orderId: string, status: string, note: string) {
+    return m.save(m.create(OrderHistory, { orderId, status, note }));
   }
 
   private ref(o: Order) {
