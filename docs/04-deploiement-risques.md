@@ -38,7 +38,7 @@ curl https://api.exemple.bj/api/products -H "authorization: Bearer <jeton>"
 - **Sauvegarde** : `docker compose exec <service>-db pg_dump -U <user> <base> > sauvegarde.sql` (une base par service), à planifier chaque nuit (cron) et à copier hors du serveur. Volumes à conserver : `*-db-data`, `grafana-data`.
 - **Supervision** : Grafana (tableau « SFMC – Vue d'ensemble »), Prometheus, `/health` de chaque service. Exposer Grafana uniquement via un tunnel SSH ou un reverse proxy authentifié.
 - **Rollback** : `git checkout <tag précédent>` puis même commande `up -d --build`.
-- **Avant le premier déploiement réel** : remplacer `synchronize` par des migrations TypeORM (voir README, « Limites connues »).
+- **Montée de version du schéma** : automatique au démarrage de chaque service (migrations versionnées, verrou PostgreSQL). Faire une sauvegarde `pg_dump` avant toute mise à jour qui contient une nouvelle migration ; en cas de problème, restaurer la sauvegarde et redéployer la version précédente.
 
 ## 2. Planning (réalisé)
 

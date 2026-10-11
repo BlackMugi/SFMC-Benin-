@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, typeOrmConfig } from '@sfmc/common';
+import { MIGRATIONS } from './migrations';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { LocalTokenProvider } from './local-token.provider';
@@ -14,7 +15,7 @@ import { TokensService } from './tokens.service';
   imports: [
     // auth-service ne s'appelle pas lui-même pour obtenir un jeton de service : il le signe localement.
     CommonModule.forRoot({ serviceName: 'auth-service', events: false, tokenProvider: LocalTokenProvider }),
-    TypeOrmModule.forRoot(typeOrmConfig()),
+    TypeOrmModule.forRootAsync(typeOrmConfig(MIGRATIONS)),
     TypeOrmModule.forFeature([RefreshToken, OAuthClient]),
   ],
   controllers: [AuthController, OAuthController],

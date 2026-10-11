@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, typeOrmConfig } from '@sfmc/common';
+import { MIGRATIONS } from './migrations';
 import { Machine, WorkOrder } from './entities';
 import { ProductionController } from './production.controller';
 import { ProductionService } from './production.service';
@@ -8,7 +9,7 @@ import { ProductionService } from './production.service';
 @Module({
   imports: [
     CommonModule.forRoot({ serviceName: 'production-service' }),
-    TypeOrmModule.forRoot(typeOrmConfig()),
+    TypeOrmModule.forRootAsync(typeOrmConfig(MIGRATIONS)),
     TypeOrmModule.forFeature([Machine, WorkOrder]),
   ],
   controllers: [ProductionController],

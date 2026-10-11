@@ -20,7 +20,9 @@
     "down": "docker compose down",
     "load": "node scripts/load-test.mjs",
     "load:ha": "node scripts/load-test.mjs --kill order-service",
-    "lint": "eslint services packages"
+    "lint": "eslint services packages",
+    "migration:generate": "node scripts/migration-generate.mjs",
+    "test:migrations": "node scripts/migration-test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

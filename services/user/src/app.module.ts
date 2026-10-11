@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, typeOrmConfig } from '@sfmc/common';
+import { MIGRATIONS } from './migrations';
 import { User } from './user.entity';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
@@ -8,7 +9,7 @@ import { UsersService } from './users.service';
 @Module({
   imports: [
     CommonModule.forRoot({ serviceName: 'user-service', events: false }),
-    TypeOrmModule.forRoot(typeOrmConfig()),
+    TypeOrmModule.forRootAsync(typeOrmConfig(MIGRATIONS)),
     TypeOrmModule.forFeature([User]),
   ],
   controllers: [UsersController],

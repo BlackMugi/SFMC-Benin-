@@ -156,6 +156,25 @@ curl -sk https://localhost:8443/api/products -H "authorization: Bearer $TOKEN"
 curl -skN https://localhost:8443/api/production/stream -H "authorization: Bearer $TOKEN"   # SSE
 ```
 
+## Base de données et migrations
+
+Chaque service possède sa base et ses **migrations versionnées** (`services/<service>/src/migrations`). Une migration est un fichier qui décrit un changement de schéma (`up`) et comment l'annuler (`down`) : le schéma évolue de façon contrôlée et identique sur toutes les machines, au lieu d'être déduit automatiquement du code.
+
+- Au démarrage, le service applique les migrations en attente avant d'accepter des requêtes, sous verrou PostgreSQL (deux répliques ne migrent jamais en même temps).
+- Base créée avant les migrations (ancien mode `synchronize`) : la migration initiale est marquée comme appliquée sans toucher aux données (*baseline*).
+- `synchronize` est désactivé par défaut (`DB_SYNC=false`).
+
+Faire évoluer le schéma :
+```bash
+# 1. modifier l'entité, puis compiler
+npm run build -w @sfmc/order
+# 2. générer la migration (PostgreSQL jetable dans Docker, comparaison entités / migrations existantes)
+npm run migration:generate -- order AddDeliveryDate
+# 3. relire services/order/src/migrations/<horodatage>-AddDeliveryDate.ts, recompiler, tester
+npm run build && npm run test:migrations
+```
+`npm run test:migrations` vérifie pour les 9 bases : application sur base vide, schéma identique aux entités, annulation complète puis réapplication, reprise d'une base existante sans perte.
+
 ## Déploiement en production
 
 Procédure complète (certificat TLS, variables, sauvegardes, rollback), planning, risques techniques et facteurs de réussite : [`docs/04-deploiement-risques.md`](docs/04-deploiement-risques.md). Commande : `docker compose -f docker-compose.yml -f docker-compose.scale.yml -f docker-compose.prod.yml up -d --build`.
@@ -173,7 +192,6 @@ scripts/            init-env.mjs, demo.mjs
 
 ## Limites connues / pistes
 
-- `synchronize: true` (TypeORM) pour la démo : prévoir des migrations en production.
 - JWT HS256 à secret partagé : passer à RS256 + JWKS pour isoler la clé de signature.
 - Publication d'événements après commit sans *outbox* : un crash entre les deux pourrait perdre un événement (atténué à la création de commande par rejet compensatoire).
 - Consul en mode `-dev` (un seul nœud, non persistant) ; RabbitMQ et PostgreSQL en instance unique.

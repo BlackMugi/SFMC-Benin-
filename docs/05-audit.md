@@ -41,9 +41,16 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 - ESLint ajouté (`npm run lint`) : 0 erreur, 17 avertissements (usage de `any` ciblé, surtout aux frontières RabbitMQ et JSON).
 - Défaut trouvé par le linter : dans Order, l'échec de publication de `OrderCreated` était avalé sans trace. Il est maintenant journalisé (la compensation, commande rejetée, existait déjà).
 
-## 4. Limites assumées (hors périmètre de la démonstration)
+## 4. Améliorations « production » (suite de l'audit)
 
-- Migrations de base de données : `synchronize` est actif ; à remplacer par des migrations avant une vraie mise en production.
+### Migrations versionnées (objectif 1)
+- 9 bases (la gateway n'en a pas) : migration initiale générée depuis les entités, puis relue ; extension `uuid-ossp` et séquence des factures rendues explicites.
+- Application automatique au démarrage sous `pg_advisory_lock` ; reprise des bases existantes par *baseline* ; `synchronize` désactivé.
+- Preuve : `npm run test:migrations` : 63 contrôles sur 63 (up, schéma = entités, down complet, up à nouveau, baseline sans perte). Sur la plateforme existante : 9 baselines, 13 commandes avant et après.
+- Défaut trouvé au passage : la compilation incrémentale de TypeScript (cache `tsbuildinfo` hors de `dist/`, que `nest build` vide) produisait des `dist/` incomplets en local. Compilation incrémentale désactivée.
+
+## 5. Limites assumées (hors périmètre de la démonstration)
+
 - *Outbox* : pas implémentée ; un crash entre la sauvegarde et la publication d'un événement peut le perdre.
 - JWT en HS256 avec secret partagé : passer à RS256 + JWKS pour isoler la clé de signature.
 - Consul en mode `-dev`, RabbitMQ et PostgreSQL en instance unique : pas de haute disponibilité de l'infrastructure elle-même.

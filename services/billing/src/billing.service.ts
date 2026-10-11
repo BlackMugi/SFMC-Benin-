@@ -25,7 +25,6 @@ export class BillingService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.ds.query('CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1');
     await this.bus.subscribe('billing.saga', [EVENTS.OrderValidated, EVENTS.OrderRejected, EVENTS.OrderCancelled], (e) => this.handleEvent(e));
   }
 

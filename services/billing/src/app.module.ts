@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, typeOrmConfig } from '@sfmc/common';
+import { MIGRATIONS } from './migrations';
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
 import { Invoice } from './invoice.entity';
@@ -9,7 +10,7 @@ import { MockPaymentProvider, PaymentProvider } from './payment.provider';
 @Module({
   imports: [
     CommonModule.forRoot({ serviceName: 'billing-service' }),
-    TypeOrmModule.forRoot(typeOrmConfig()),
+    TypeOrmModule.forRootAsync(typeOrmConfig(MIGRATIONS)),
     TypeOrmModule.forFeature([Invoice]),
   ],
   controllers: [BillingController],
