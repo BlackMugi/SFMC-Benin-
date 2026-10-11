@@ -65,11 +65,13 @@ services:
     ports: ["127.0.0.1:15672:15672"]
     volumes: [rabbitmq-data:/var/lib/rabbitmq]
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 15s
+      # Test de port volontairement sans « rabbitmq-diagnostics » : lancé en root avant que le broker ait créé son
+      # .erlang.cookie, il le créerait avec de mauvais droits (eacces) et ferait planter le broker au 1er démarrage.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5672"]
+      interval: 5s
+      timeout: 5s
       retries: 30
-      start_period: 60s # premier démarrage lent quand 10 bases démarrent en parallèle
+      start_period: 30s
 
   prometheus:
     image: prom/prometheus:v2.55.1

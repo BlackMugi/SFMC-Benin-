@@ -92,6 +92,7 @@ export class OrdersService implements OnModuleInit {
     try {
       await this.bus.publish(EVENTS.OrderCreated, { ...this.ref(order), items, total, urgency: order.urgency, requiredBy: order.requiredBy?.toISOString() });
     } catch (e) {
+      this.log.error(`Publication de OrderCreated impossible : ${(e as Error).message}`);
       // Compensation : sans événement, la saga ne démarrera jamais -> on ne laisse pas une commande orpheline.
       await this.orders.update({ id: order.id }, { status: 'rejected', phase: 'closed', rejectionReason: 'Broker indisponible' });
       throw new ServiceUnavailableException('Traitement de commande indisponible, réessayez');
