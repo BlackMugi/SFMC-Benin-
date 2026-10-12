@@ -22,6 +22,7 @@ describe('config', () => {
 describe('sanitize', () => {
   it('retire les balises HTML', () => {
     expect(stripHtml('<img src=x onerror=alert(1)>Bonjour <b>Awa</b>')).toBe('Bonjour Awa');
+    expect(stripHtml('<script>alert(1)</script>Awa<STYLE>body{}</STYLE>')).toBe('Awa');
   });
 });
 

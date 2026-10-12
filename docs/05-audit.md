@@ -63,6 +63,10 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 - Si `auth-service` est injoignable au moment où un service doit charger les clés : réponse 503 (et non 401), pour ne pas déconnecter les utilisateurs à tort.
 - Preuves : tests unitaires (jeton valide, clé précédente acceptée, autre clé, `alg=none`, confusion HS256/clé publique, `kid` inventé, type `refresh`, aucune partie privée dans le JWKS) ; sur la plateforme : clé privée présente dans le seul conteneur `auth-service`, `JWT_SECRET` absent partout, attaque par confusion d'algorithme refusée à la gateway et directement sur un service (401), jetons émis en RS256 avec un `kid` publié.
 
+### Tests de sécurité permanents (objectif 4)
+- `npm run test:security` : 24 tests contre la plateforme réelle (HTTPS via la gateway et appels directs aux services). Transport (redirection HTTPS, en-têtes) ; JWT (absent, `alg=none`, confusion HS256/clé publique, autre clé RSA, `kid` inventé, contenu altéré, rejeu de refresh token avec révocation de la famille, message identique pour compte inconnu ou mauvais mot de passe) ; autorisation (RBAC, en-têtes `x-user-*` forgés via la gateway et en direct, accès à la commande et à la facture d'un autre client, modification du profil d'un autre, auto-promotion admin, endpoints internes, scopes OAuth2 partenaire) ; entrées (SQLi en paramètre, en identifiant et au login, XSS, mass assignment, DTO stricts, corps > 1 Mo) ; CORS ; limitation des tentatives de connexion.
+- Défaut trouvé : le nettoyage XSS laissait le texte contenu dans une balise `<script>` (`alert(1)`, inoffensif mais inutile). Le contenu des balises `script` et `style` est désormais retiré en entier.
+
 ## 5. Limites assumées (hors périmètre de la démonstration)
 
 - Consul en mode `-dev`, RabbitMQ et PostgreSQL en instance unique : pas de haute disponibilité de l'infrastructure elle-même.

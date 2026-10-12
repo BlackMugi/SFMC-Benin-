@@ -23,7 +23,8 @@
     "lint": "eslint services packages",
     "migration:generate": "node scripts/migration-generate.mjs",
     "test:migrations": "node scripts/migration-test.mjs",
-    "test:resilience": "jest --config tests/resilience/jest.config.js --runInBand"
+    "test:resilience": "jest --config tests/resilience/jest.config.js --runInBand",
+    "test:security": "jest --config tests/security/jest.config.js --runInBand"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -130,6 +130,11 @@ Voir [`.env.example`](.env.example). Principales :
 | `docker compose up --build -d` / `npm run up` | Démarre la plateforme |
 | `npm run demo` / `./demo.sh` | Rejoue le scénario de bout en bout |
 | `npm run test:integration` | Test d'intégration du flux commande (plateforme démarrée) |
+| `npm run test:security` | 24 tests d'attaque OWASP contre la plateforme réelle (bloque les connexions de cette IP 1 minute à la fin : test anti brute-force) |
+| `npm run test:resilience` | Pannes réelles (broker arrêté, service tué) : vérifie l'outbox. Plateforme de développement uniquement |
+| `npm run test:migrations` | Migrations des 9 bases sur PostgreSQL jetable (après `npm run build`) |
+| `npm run lint` | Analyse statique (ESLint) |
+| `npm run load` | Test de charge k6 |
 | `docker compose logs -f order-service` | Logs JSON d'un service |
 | `docker compose up -d --scale inventory-service=2` | Scalabilité horizontale (services stateless, consommateurs concurrents) |
 | `docker compose down -v` | Arrêt et suppression des données |
