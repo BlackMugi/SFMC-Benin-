@@ -81,6 +81,21 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 - La règle ESLint `no-explicit-any` est passée en erreur : un nouveau `any` fait échouer `npm run lint`.
 - Défaut de méthode trouvé : mon contrôle local de compilation filtrait la sortie colorée de `nest build` et pouvait manquer une erreur ; le build Docker l'a détectée. Contrôle corrigé (code de sortie, couleurs retirées).
 
+### Vérification finale
+Clone neuf depuis GitHub (commit `17caea5`), `.env` généré, démarrage à froid sur bases vides :
+
+| Contrôle | Résultat |
+|---|---|
+| `npm run build` / `npm run lint` | OK / 0 problème |
+| `npm test` (unitaires) | 95 / 95 |
+| `npm run test:migrations` | 9 bases OK |
+| `npm run demo` | scénario complet (12 étapes) |
+| `npm run test:integration` | 7 / 7 |
+| `npm run test:contracts -- --live` | 77 / 77, 15 types d'événements réels conformes, message cassé écarté |
+| `npm run test:resilience` | 2 / 2 (broker arrêté, service tué, doublon) |
+| `npm run test:security` | 24 / 24 |
+| `npm run load` (plateforme principale) | p95 111 ms, 0 % d'erreur, 15 637 requêtes |
+
 ## 5. Limites assumées (hors périmètre de la démonstration)
 
 - Consul en mode `-dev`, RabbitMQ et PostgreSQL en instance unique : pas de haute disponibilité de l'infrastructure elle-même.

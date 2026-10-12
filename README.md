@@ -83,7 +83,7 @@ Fin de fabrication : la machine est libérée et le lot passe à `QUALITY_CHECK`
 - **Haute disponibilité** : `docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --build` lance 2 répliques de gateway, auth, product, inventory et order. nginx répartit la charge entre les gateways (DNS dynamique), les gateways entre les services (Consul, round-robin), Prometheus scrape chaque réplique. `production-service` reste unique (flux SSE en mémoire). Le rate limit est compté par instance de gateway.
 - La gateway écarte une instance injoignable et rejoue les requêtes de lecture (GET/HEAD) sur une autre.
 - **Test de charge k6** (`npm run load`) : 30 utilisateurs virtuels sur 6 endpoints, seuils p95 < 2 s et erreurs < 1 %. `npm run load:ha` tue en plus une réplique d'`order-service` pendant la charge. Pour la charge, relever `GATEWAY_RATE_LIMIT` (par ex. 100000) avant `docker compose up`.
-- Mesuré en local (stack à 2 répliques) : p95 ≈ 80 ms, 0 % d'erreur, ≈ 400 req/s. Avec arrêt brutal d'une réplique : < 1 % d'erreurs (requêtes en vol sur l'instance tuée).
+- Mesuré en local (stack à 2 répliques) : p95 ≈ 80 ms, 0 % d'erreur, ≈ 400 req/s. Remesuré après l'outbox et la vérification RS256 (stack simple, données accumulées) : p95 ≈ 111 ms, 0 % d'erreur sur 15 637 requêtes. Avec arrêt brutal d'une réplique : < 1 % d'erreurs (requêtes en vol sur l'instance tuée).
 
 ## Sécurité (OWASP)
 
