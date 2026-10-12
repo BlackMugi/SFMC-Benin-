@@ -58,3 +58,33 @@ export interface OrderCancelledPayload extends OrderRef { reason: string }
 export interface OrderShippedPayload extends OrderRef { items: OrderLine[] }
 export interface InvoiceIssuedPayload extends OrderRef { invoiceId: string; number: string; amount: number; currency: string }
 export interface InvoicePaidPayload { invoiceId: string; orderId: string; amount: number; method: string; customerEmail: string }
+
+/** Contenu de chaque type d'événement. */
+export interface EventPayloads {
+  OrderCreated: OrderCreatedPayload;
+  StockReserved: StockReservedPayload;
+  StockInsufficient: StockInsufficientPayload;
+  ProductionRequested: ProductionRequestedPayload;
+  ProductionCompleted: ProductionCompletedPayload;
+  ProductionFailed: ProductionFailedPayload;
+  StockUpdated: StockUpdatedPayload;
+  StockLow: StockLowPayload;
+  StockReleased: StockReleasedPayload;
+  OrderValidated: OrderValidatedPayload;
+  OrderRejected: OrderRejectedPayload;
+  OrderCancelled: OrderCancelledPayload;
+  OrderShipped: OrderShippedPayload;
+  InvoiceIssued: InvoiceIssuedPayload;
+  InvoicePaid: InvoicePaidPayload;
+}
+
+/**
+ * Événement reçu, typé selon son type : après `switch (e.type)` ou `if (e.type === 'X')`, le compilateur connaît
+ * le contenu exact de e.payload (un champ inexistant ou mal orthographié devient une erreur de compilation).
+ */
+export type DomainEvent = { [K in EventType]: EventEnvelope<EventPayloads[K]> & { type: K } }[EventType];
+
+/** Commande concernée par l'événement, s'il y en a une (StockLow ou un mouvement de stock manuel n'en ont pas). */
+export function orderIdOf(e: DomainEvent): string | null {
+  return 'orderId' in e.payload && typeof e.payload.orderId === 'string' ? e.payload.orderId : null;
+}

@@ -38,7 +38,7 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 
 - Compilation TypeScript en mode `strict` : 0 erreur.
 - Tests unitaires : 59 tests, 11 suites ; intégration : 7 tests ; charge : voir README.
-- ESLint ajouté (`npm run lint`) : 0 erreur, 17 avertissements (usage de `any` ciblé, surtout aux frontières RabbitMQ et JSON).
+- ESLint (`npm run lint`) : 0 erreur, 0 avertissement ; `any` interdit dans le code de production (règle en erreur, tolérée dans les tests).
 - Défaut trouvé par le linter : dans Order, l'échec de publication de `OrderCreated` était avalé sans trace. Il est maintenant journalisé (la compensation, commande rejetée, existait déjà).
 
 ## 4. Améliorations « production » (suite de l'audit)
@@ -73,6 +73,13 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 - Preuves : 34 tests unitaires (exemple de référence conforme pour chaque événement, chaque champ obligatoire manquant détecté, types, formats, valeurs, tableaux) ; `npm run test:contracts -- --live` : 77 contrôles, catalogue documenté = code, 320 événements réels conformes sur les 15 types, message cassé injecté dans RabbitMQ écarté en dead-letter et refusé par son consommateur.
 - Défaut trouvé : le catalogue documenté omettait Notification parmi les consommateurs de `ProductionFailed` (alerte équipe). Corrigé ; le test empêche ce type de dérive à l'avenir.
 - Limite : les tests unitaires des services (Order, Billing) utilisent des identifiants simplifiés et ne passent donc pas par la validation des contrats ; les producteurs sont couverts par la validation à l'envoi et par le contrôle des événements réels.
+
+### Typage strict des événements (objectif 6)
+- Les 17 `any` du code de production ont été supprimés, sans changement de comportement (mêmes tests verts, mêmes résultats de démo).
+- Gain principal : type `DomainEvent` (union discriminée). Dans chaque gestionnaire, après `switch (e.type)`, le compilateur connaît le contenu exact du message : lire un champ qui n'existe pas dans cet événement, ou mal orthographié, est désormais une erreur de compilation. Le bus ne transmet un `DomainEvent` qu'après vérification du contrat.
+- Autres : connexion RabbitMQ et application Express typées (fin des transtypages), réponse du client REST de type `unknown` par défaut (l'appelant doit préciser le type attendu).
+- La règle ESLint `no-explicit-any` est passée en erreur : un nouveau `any` fait échouer `npm run lint`.
+- Défaut de méthode trouvé : mon contrôle local de compilation filtrait la sortie colorée de `nest build` et pouvait manquer une erreur ; le build Docker l'a détectée. Contrôle corrigé (code de sortie, couleurs retirées).
 
 ## 5. Limites assumées (hors périmètre de la démonstration)
 

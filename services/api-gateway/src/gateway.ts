@@ -83,7 +83,7 @@ export function setupGateway(app: INestApplication) {
     try {
       req.sfmcTarget = await consul.resolve(service);
       // étiquette de métrique : /api/<segment>
-      (req as any).route = { path: '/' + req.originalUrl.split('/')[2].split('?')[0] };
+      req.route = { path: '/' + req.originalUrl.split('/')[2].split('?')[0] };
       next();
     } catch (e) {
       log.error(`Service ${service} indisponible : ${(e as Error).message}`);

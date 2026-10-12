@@ -1,5 +1,6 @@
 import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
@@ -21,9 +22,9 @@ export interface BootstrapOptions {
 }
 
 export async function bootstrapService(module: unknown, opts: BootstrapOptions): Promise<INestApplication> {
-  const app = await NestFactory.create(module as never, { bodyParser: opts.bodyParser ?? true });
+  const app = await NestFactory.create<NestExpressApplication>(module as never, { bodyParser: opts.bodyParser ?? true });
   app.useLogger(new JsonLogger(opts.serviceName));
-  (app as any).set('trust proxy', 1);
+  app.set('trust proxy', 1);
 
   // correlation-id : repris de l'en-tête entrant ou généré, exposé dans la réponse et dans les logs
   app.use((req: Request, res: Response, next: NextFunction) => {

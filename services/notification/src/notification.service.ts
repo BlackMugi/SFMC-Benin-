@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { AuthUser, EventBus, EventEnvelope, EventType, Role, env } from '@sfmc/common';
+import { AuthUser, DomainEvent, EventBus, EventType, Role, env, orderIdOf } from '@sfmc/common';
 import { Notification, OrderContact } from './entities';
 import { NotificationProvider } from './providers';
 import { NOTIFIED_EVENTS, render } from './templates';
@@ -21,15 +21,15 @@ export class NotificationService implements OnModuleInit {
     await this.bus.subscribe('notification.events', [...NOTIFIED_EVENTS] as EventType[], (e) => this.handle(e));
   }
 
-  async handle(e: EventEnvelope<any>): Promise<void> {
+  async handle(e: DomainEvent): Promise<void> {
     if (e.type === 'OrderCreated' && e.payload.customerEmail) {
       await this.contacts.upsert({ orderId: e.payload.orderId, email: e.payload.customerEmail }, ['orderId']);
     }
     const msg = render(e);
     if (!msg) return;
-    const recipient = msg.recipient === 'ops' ? env('ADMIN_NOTIFY_EMAIL', 'ops@sfmc.bj') : await this.customerEmail(e.payload);
+    const recipient = msg.recipient === 'ops' ? env('ADMIN_NOTIFY_EMAIL', 'ops@sfmc.bj') : await this.customerEmail(e);
     // Contact client pas encore connu (OrderCreated en cours de traitement) : on laisse le bus ré-essayer.
-    if (!recipient) throw new Error(`destinataire inconnu pour ${e.type} (commande ${e.payload.orderId ?? '-'})`);
+    if (!recipient) throw new Error(`destinataire inconnu pour ${e.type} (commande ${orderIdOf(e) ?? '-'})`);
     if (await this.notifications.exists({ where: { eventId: e.id, recipient, status: 'SENT' } })) return; // rejeu
     let status: 'SENT' | 'FAILED' = 'SENT';
     try {
@@ -45,9 +45,11 @@ export class NotificationService implements OnModuleInit {
     if (status === 'FAILED') throw new Error('envoi de notification échoué'); // -> ré-essai puis dead-letter
   }
 
-  private async customerEmail(payload: any): Promise<string | null> {
-    if (payload.customerEmail) return payload.customerEmail;
-    if (payload.orderId) return (await this.contacts.findOne({ where: { orderId: payload.orderId } }))?.email ?? null;
+  /** E-mail du client : porté par l'événement, sinon retrouvé par la commande (contact mémorisé à OrderCreated). */
+  private async customerEmail(e: DomainEvent): Promise<string | null> {
+    if ('customerEmail' in e.payload && e.payload.customerEmail) return e.payload.customerEmail;
+    const orderId = orderIdOf(e);
+    if (orderId) return (await this.contacts.findOne({ where: { orderId } }))?.email ?? null;
     return null;
   }
 

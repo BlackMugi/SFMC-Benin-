@@ -5,7 +5,7 @@ import {
   AuthUser,
   EVENTS,
   EventBus,
-  EventEnvelope,
+  DomainEvent,
   Outbox,
   OrderLine,
   ProductCategory,
@@ -145,7 +145,7 @@ export class OrdersService implements OnModuleInit {
 
   // ------------------------------------------------------------------ Saga (chorégraphie)
 
-  async handleEvent(e: EventEnvelope<any>): Promise<void> {
+  async handleEvent(e: DomainEvent): Promise<void> {
     switch (e.type) {
       case 'StockReserved':
         return this.onStockReserved(e.payload.orderId);

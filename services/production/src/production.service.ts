@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicati
 import { InjectRepository } from '@nestjs/typeorm';
 import { Observable, Subject, defer, filter, from, map, merge, concat, interval } from 'rxjs';
 import { In, Repository } from 'typeorm';
-import { EVENTS, EventBus, EventEnvelope, Outbox, ProductCategory, ProductionRequestedPayload, envBool, envInt } from '@sfmc/common';
+import { EVENTS, EventBus, Outbox, ProductCategory, ProductionRequestedPayload, envBool, envInt } from '@sfmc/common';
 import { Machine, WorkOrder } from './entities';
 import { PlanEntry, buildPlan, durationMs, priorityScore } from './planning';
 
@@ -68,7 +68,9 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
     }
     // Reprise après redémarrage : les machines "BUSY" sans ordre en cours redeviennent libres.
     await this.releaseOrphanMachines();
-    await this.bus.subscribe('production.requests', [EVENTS.ProductionRequested], (e: EventEnvelope<ProductionRequestedPayload>) => this.onProductionRequested(e.payload));
+    await this.bus.subscribe('production.requests', [EVENTS.ProductionRequested], async (e) => {
+      if (e.type === 'ProductionRequested') await this.onProductionRequested(e.payload);
+    });
     this.timer = setInterval(() => void this.tick(), 1000);
   }
 

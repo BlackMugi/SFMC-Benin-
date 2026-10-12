@@ -1,4 +1,4 @@
-import { EventEnvelope } from '@sfmc/common';
+import { DomainEvent } from '@sfmc/common';
 
 export interface Rendered {
   recipient: 'customer' | 'ops';
@@ -10,33 +10,32 @@ const fmt = (n: number, currency = 'XOF') => `${new Intl.NumberFormat('fr-FR').f
 const short = (id: string) => id.slice(0, 8);
 
 /** Transforme un événement en message (français). Retourne null pour les événements sans notification. */
-export function render(e: EventEnvelope<any>): Rendered | null {
-  const p = e.payload;
+export function render(e: DomainEvent): Rendered | null {
   switch (e.type) {
     case 'OrderCreated':
-      return { recipient: 'customer', subject: `Commande ${short(p.orderId)} reçue`, body: `Nous avons bien reçu votre commande ${short(p.orderId)} d'un montant de ${fmt(p.total)}. Nous vérifions le stock.` };
+      return { recipient: 'customer', subject: `Commande ${short(e.payload.orderId)} reçue`, body: `Nous avons bien reçu votre commande ${short(e.payload.orderId)} d'un montant de ${fmt(e.payload.total)}. Nous vérifions le stock.` };
     case 'StockInsufficient':
-      return { recipient: 'customer', subject: `Commande ${short(p.orderId)} : production en cours`, body: `Le stock est insuffisant pour votre commande ${short(p.orderId)}. Une production a été lancée, nous vous tiendrons informé.` };
+      return { recipient: 'customer', subject: `Commande ${short(e.payload.orderId)} : production en cours`, body: `Le stock est insuffisant pour votre commande ${short(e.payload.orderId)}. Une production a été lancée, nous vous tiendrons informé.` };
     case 'ProductionCompleted':
-      return p.orderId
-        ? { recipient: 'customer', subject: `Commande ${short(p.orderId)} : production terminée`, body: `La fabrication de ${p.quantity} × ${p.productName} est terminée.` }
-        : { recipient: 'ops', subject: `Production terminée : ${p.productName}`, body: `Ordre ${short(p.workOrderId)} terminé (${p.quantity} unités).` };
+      return e.payload.orderId
+        ? { recipient: 'customer', subject: `Commande ${short(e.payload.orderId)} : production terminée`, body: `La fabrication de ${e.payload.quantity} × ${e.payload.productName} est terminée.` }
+        : { recipient: 'ops', subject: `Production terminée : ${e.payload.productName}`, body: `Ordre ${short(e.payload.workOrderId)} terminé (${e.payload.quantity} unités).` };
     case 'ProductionFailed':
-      return { recipient: 'ops', subject: `Échec de production`, body: `Commande ${p.orderId ? short(p.orderId) : '-'} : ${p.reason}` };
+      return { recipient: 'ops', subject: `Échec de production`, body: `Commande ${e.payload.orderId ? short(e.payload.orderId) : '-'} : ${e.payload.reason}` };
     case 'StockLow':
-      return { recipient: 'ops', subject: `ALERTE seuil critique`, body: `Produit ${short(p.productId)} (entrepôt ${short(p.warehouseId)}) : ${p.available} disponible(s) pour un seuil de ${p.threshold}. Réapprovisionnement ou production à prévoir.` };
+      return { recipient: 'ops', subject: `ALERTE seuil critique`, body: `Produit ${short(e.payload.productId)} (entrepôt ${short(e.payload.warehouseId)}) : ${e.payload.available} disponible(s) pour un seuil de ${e.payload.threshold}. Réapprovisionnement ou production à prévoir.` };
     case 'OrderValidated':
-      return { recipient: 'customer', subject: `Commande ${short(p.orderId)} validée`, body: `Votre commande ${short(p.orderId)} est validée. Montant HT : ${fmt(p.total)}.` };
+      return { recipient: 'customer', subject: `Commande ${short(e.payload.orderId)} validée`, body: `Votre commande ${short(e.payload.orderId)} est validée. Montant HT : ${fmt(e.payload.total)}.` };
     case 'InvoiceIssued':
-      return { recipient: 'customer', subject: `Facture ${p.number}`, body: `Votre facture ${p.number} est disponible : ${fmt(p.amount, p.currency)} TTC.` };
+      return { recipient: 'customer', subject: `Facture ${e.payload.number}`, body: `Votre facture ${e.payload.number} est disponible : ${fmt(e.payload.amount, e.payload.currency)} TTC.` };
     case 'InvoicePaid':
-      return { recipient: 'customer', subject: `Paiement reçu`, body: `Nous avons reçu votre paiement de ${fmt(p.amount)} (${p.method}). Merci.` };
+      return { recipient: 'customer', subject: `Paiement reçu`, body: `Nous avons reçu votre paiement de ${fmt(e.payload.amount)} (${e.payload.method}). Merci.` };
     case 'OrderShipped':
-      return { recipient: 'customer', subject: `Commande ${short(p.orderId)} expédiée`, body: `Votre commande ${short(p.orderId)} a été expédiée.` };
+      return { recipient: 'customer', subject: `Commande ${short(e.payload.orderId)} expédiée`, body: `Votre commande ${short(e.payload.orderId)} a été expédiée.` };
     case 'OrderRejected':
-      return { recipient: 'customer', subject: `Commande ${short(p.orderId)} refusée`, body: `Nous ne pouvons pas honorer votre commande : ${p.reason}` };
+      return { recipient: 'customer', subject: `Commande ${short(e.payload.orderId)} refusée`, body: `Nous ne pouvons pas honorer votre commande : ${e.payload.reason}` };
     case 'OrderCancelled':
-      return { recipient: 'customer', subject: `Commande ${short(p.orderId)} annulée`, body: `Votre commande ${short(p.orderId)} est annulée.` };
+      return { recipient: 'customer', subject: `Commande ${short(e.payload.orderId)} annulée`, body: `Votre commande ${short(e.payload.orderId)} est annulée.` };
     default:
       return null;
   }

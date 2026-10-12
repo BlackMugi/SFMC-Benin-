@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { AuthUser, EVENTS, EventBus, EventEnvelope, Outbox, OrderCancelledPayload, OrderRejectedPayload, OrderValidatedPayload, Role, envFloat, env } from '@sfmc/common';
+import { AuthUser, EVENTS, DomainEvent, EventBus, Outbox, OrderCancelledPayload, OrderRejectedPayload, OrderValidatedPayload, Role, envFloat, env } from '@sfmc/common';
 import { Invoice, InvoiceLine } from './invoice.entity';
 import { PaymentProvider } from './payment.provider';
 
@@ -29,7 +29,7 @@ export class BillingService implements OnModuleInit {
     await this.bus.subscribe('billing.saga', [EVENTS.OrderValidated, EVENTS.OrderRejected, EVENTS.OrderCancelled], (e) => this.handleEvent(e));
   }
 
-  private async handleEvent(e: EventEnvelope<any>): Promise<void> {
+  private async handleEvent(e: DomainEvent): Promise<void> {
     if (e.type === 'OrderValidated') await this.issue(e.payload);
     else if (e.type === 'OrderRejected' || e.type === 'OrderCancelled') await this.cancelForOrder((e.payload as OrderRejectedPayload | OrderCancelledPayload).orderId);
   }

@@ -1,11 +1,11 @@
-import { EventEnvelope } from '@sfmc/common';
+import { EventEnvelope, OrderValidatedPayload } from '@sfmc/common';
 
 /** Fonctions pures de projection : événement -> lignes des vues de lecture. */
 
-export function saleLinesFrom(e: EventEnvelope<any>) {
+export function saleLinesFrom(e: EventEnvelope<OrderValidatedPayload>) {
   const day = e.occurredAt.slice(0, 10);
-  return (e.payload.items as { productId: string; productName: string; quantity: number; unitPrice: number }[]).map((i) => ({
-    orderId: e.payload.orderId as string,
+  return e.payload.items.map((i) => ({
+    orderId: e.payload.orderId,
     productId: i.productId,
     productName: i.productName,
     quantity: i.quantity,
@@ -26,8 +26,4 @@ export function applyStockUpdated(
   const threshold = prev?.lowThreshold ?? null;
   if (low && p.movementType === 'IN' && threshold !== null && p.quantity - p.reserved > threshold) low = false;
   return { quantity: p.quantity, reserved: p.reserved, low, lowThreshold: low ? threshold : null };
-}
-
-export function orderIdOf(e: EventEnvelope<any>): string | null {
-  return typeof e.payload?.orderId === 'string' ? e.payload.orderId : null;
 }

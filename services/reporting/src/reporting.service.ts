@@ -1,9 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { EVENTS, EventBus, EventEnvelope, EventType } from '@sfmc/common';
+import { DomainEvent, EVENTS, EventBus, EventType, orderIdOf } from '@sfmc/common';
 import { EventLog, ProductionStat, SaleLine, StockSnapshot } from './entities';
-import { applyStockUpdated, orderIdOf, saleLinesFrom } from './projections';
+import { applyStockUpdated, saleLinesFrom } from './projections';
 
 @Injectable()
 export class ReportingService implements OnModuleInit {
@@ -24,7 +24,7 @@ export class ReportingService implements OnModuleInit {
 
   // ------------------------------------------------------------------ Projections (événement -> vue de lecture)
 
-  async project(e: EventEnvelope<any>): Promise<void> {
+  async project(e: DomainEvent): Promise<void> {
     await this.ds.transaction(async (m) => {
       // Journal : l'unicité de eventId rend toute la projection idempotente (rejeu = rien ne se passe).
       if (await m.exists(EventLog, { where: { eventId: e.id } })) return;

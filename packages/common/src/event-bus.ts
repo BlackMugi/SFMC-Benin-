@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 import { env } from './config';
 import { runWithContext } from './context';
 import { contractViolations } from './contracts';
-import { EventEnvelope, EventType } from './events';
+import { DomainEvent, EventEnvelope, EventType } from './events';
 import { MetricsService } from './metrics';
 import { SFMC_OPTIONS, SfmcOptions } from './options';
 
@@ -13,7 +13,7 @@ export const EXCHANGE = 'sfmc.events';
 export const DLX = 'sfmc.dlx';
 const MAX_RETRIES = 3;
 
-type Handler = (event: EventEnvelope<any>) => Promise<void>;
+type Handler = (event: DomainEvent) => Promise<void>;
 interface Subscription { queue: string; types: EventType[]; handler: Handler }
 
 /**
@@ -27,7 +27,7 @@ interface Subscription { queue: string; types: EventType[]; handler: Handler }
 @Injectable()
 export class EventBus implements OnApplicationShutdown {
   private readonly log = new Logger('EventBus');
-  private conn?: amqp.Connection;
+  private conn?: amqp.ChannelModel;
   private channel?: amqp.ConfirmChannel;
   private readonly subscriptions: Subscription[] = [];
   private closing = false;
@@ -54,7 +54,7 @@ export class EventBus implements OnApplicationShutdown {
     const url = env('RABBITMQ_URL');
     for (let attempt = 1; !this.closing; attempt++) {
       try {
-        this.conn = (await amqp.connect(url)) as unknown as amqp.Connection;
+        this.conn = await amqp.connect(url);
         this.conn.on('error', (e: Error) => this.log.error(`Erreur RabbitMQ : ${e.message}`));
         this.conn.on('close', () => {
           this.channel = undefined;
@@ -63,7 +63,7 @@ export class EventBus implements OnApplicationShutdown {
           this.connecting = undefined;
           setTimeout(() => void this.connect(), 2000);
         });
-        const ch = await (this.conn as any).createConfirmChannel();
+        const ch = await this.conn.createConfirmChannel();
         await ch.assertExchange(EXCHANGE, 'topic', { durable: true });
         await ch.assertExchange(DLX, 'fanout', { durable: true });
         await ch.assertQueue('sfmc.dead-letters', { durable: true });
@@ -147,7 +147,7 @@ export class EventBus implements OnApplicationShutdown {
           ch.ack(msg);
           return;
         }
-        await handler(event);
+        await handler(event as DomainEvent); // conforme à son contrat (vérifié ci-dessus) : contenu typé selon son type
         await this.markProcessed(event.id, queue);
         this.metrics.eventsConsumed.inc({ type: event.type });
         ch.ack(msg);
@@ -196,7 +196,7 @@ export class EventBus implements OnApplicationShutdown {
     this.closing = true;
     try {
       await this.channel?.close();
-      await (this.conn as any)?.close();
+      await this.conn?.close();
     } catch {
       /* déjà fermé */
     }

@@ -5,7 +5,7 @@ import {
   EVENTS,
   EventBus,
   Outbox,
-  EventEnvelope,
+  DomainEvent,
   EventType,
   OrderCancelledPayload,
   OrderCreatedPayload,
@@ -59,7 +59,7 @@ export class InventoryService implements OnModuleInit {
 
   // ------------------------------------------------------------------ Saga (chorégraphie)
 
-  private async handleEvent(e: EventEnvelope<any>): Promise<void> {
+  private async handleEvent(e: DomainEvent): Promise<void> {
     switch (e.type) {
       case 'OrderCreated':
         return this.onOrderCreated(e.payload);

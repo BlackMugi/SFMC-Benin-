@@ -1,5 +1,6 @@
 import { EventEnvelope } from '@sfmc/common';
-import { applyStockUpdated, orderIdOf, saleLinesFrom } from './projections';
+import { orderIdOf } from '@sfmc/common';
+import { applyStockUpdated, saleLinesFrom } from './projections';
 
 const evt = (type: string, payload: any): EventEnvelope<any> => ({ id: 'e', type: type as any, occurredAt: '2026-03-05T09:30:00.000Z', correlationId: 'c', source: 's', payload });
 

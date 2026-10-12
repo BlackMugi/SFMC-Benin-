@@ -47,7 +47,7 @@ export interface RequestOptions {
 export class ServiceClient {
   constructor(private readonly consul: ConsulService, @Inject(ServiceTokenProvider) private readonly tokens: ServiceTokenProvider) {}
 
-  async request<T = any>(service: string, method: string, path: string, opts: RequestOptions = {}): Promise<T> {
+  async request<T = unknown>(service: string, method: string, path: string, opts: RequestOptions = {}): Promise<T> {
     const base = await this.consul.resolve(service);
     const url = new URL(base + path);
     for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined) url.searchParams.set(k, String(v));
@@ -74,11 +74,11 @@ export class ServiceClient {
     return data as T;
   }
 
-  get<T = any>(service: string, path: string, query?: RequestOptions['query']) {
+  get<T = unknown>(service: string, path: string, query?: RequestOptions['query']) {
     return this.request<T>(service, 'GET', path, { query });
   }
 
-  post<T = any>(service: string, path: string, body?: unknown) {
+  post<T = unknown>(service: string, path: string, body?: unknown) {
     return this.request<T>(service, 'POST', path, { body });
   }
 }
