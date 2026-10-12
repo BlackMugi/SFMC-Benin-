@@ -118,6 +118,16 @@ sequenceDiagram
 
 Purge : lignes publiées et traces de déduplication supprimées après `OUTBOX_RETENTION_DAYS` (7 jours par défaut).
 
+## Contrats des événements
+
+Chaque événement a un **contrat** (`packages/common/src/contracts.ts`) : champs, types (UUID, date ISO, entier, valeurs autorisées), champs obligatoires ou facultatifs.
+
+- **Compilation** : le contrat doit lister exactement les champs de l'interface TypeScript de l'événement ; un oubli ou un champ inventé empêche la compilation.
+- **Envoi** : l'outbox refuse un événement non conforme, la transaction est annulée ; rien de mal formé ne part.
+- **Réception** : un message non conforme est envoyé directement en dead-letter (`sfmc.dead-letters`), avec un log qui explique l'écart, au lieu d'être ré-essayé.
+- **Évolution** : un champ supplémentaire est toléré à la réception ; on peut donc ajouter un champ à un événement sans casser ses consommateurs. Supprimer ou renommer un champ exige de mettre à jour d'abord les consommateurs.
+- `npm run test:contracts` vérifie que le tableau ci-dessous correspond au code (producteurs et consommateurs lus dans les services) ; il fait échouer la CI si la documentation dérive.
+
 ## Catalogue d'événements
 
 | Événement | Publié par | Consommé par |
@@ -127,7 +137,7 @@ Purge : lignes publiées et traces de déduplication supprimées après `OUTBOX_
 | `StockInsufficient` | Inventory | Order, Notification, Reporting |
 | `ProductionRequested` | Order | Production, Reporting |
 | `ProductionCompleted` | Production | Inventory, Order, Notification, Reporting |
-| `ProductionFailed` | Production | Order, Reporting |
+| `ProductionFailed` | Production | Order, Notification (alerte équipe), Reporting |
 | `StockUpdated` | Inventory | Reporting |
 | `StockLow` (seuil critique) | Inventory | Notification, Reporting |
 | `OrderValidated` | Order | Billing, Notification, Reporting |

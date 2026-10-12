@@ -3,6 +3,7 @@ import { ModuleRef } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
 import { Column, CreateDateColumn, DataSource, Entity, EntityManager, Index, PrimaryColumn, PrimaryGeneratedColumn } from 'typeorm';
 import { envInt } from './config';
+import { assertContract } from './contracts';
 import { getCorrelationId } from './context';
 import { EventBus } from './event-bus';
 import { EventEnvelope, EventType } from './events';
@@ -117,6 +118,8 @@ export class Outbox implements OnModuleInit, OnApplicationShutdown {
   /** Ajoute des événements à l'outbox dans une transaction déjà ouverte par l'appelant. */
   async enqueue(m: EntityManager, events: PendingEvent[]) {
     if (!events.length) return;
+    // Contrat vérifié avant l'écriture : un événement mal formé annule la transaction au lieu de casser un consommateur
+    for (const e of events) assertContract(e.type, e.payload);
     const correlationId = getCorrelationId() ?? randomUUID();
     const now = Date.now();
     await m.insert(

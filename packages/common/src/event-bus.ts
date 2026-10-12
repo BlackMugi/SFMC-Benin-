@@ -4,6 +4,7 @@ import * as amqp from 'amqplib';
 import { DataSource } from 'typeorm';
 import { env } from './config';
 import { runWithContext } from './context';
+import { contractViolations } from './contracts';
 import { EventEnvelope, EventType } from './events';
 import { MetricsService } from './metrics';
 import { SFMC_OPTIONS, SfmcOptions } from './options';
@@ -128,6 +129,14 @@ export class EventBus implements OnApplicationShutdown {
     try {
       event = JSON.parse(msg.content.toString());
     } catch {
+      ch.nack(msg, false, false);
+      return;
+    }
+    const violations = contractViolations(event.type, event.payload);
+    if (violations.length) {
+      // Message non conforme : inutile de le ré-essayer, il part directement en dead-letter pour analyse
+      this.log.error(`Contrat ${event.type} non respecté (${event.source ?? 'source inconnue'}) : ${violations.join(' ; ')}`);
+      this.metrics.eventsFailed.inc({ type: event.type });
       ch.nack(msg, false, false);
       return;
     }

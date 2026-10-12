@@ -132,6 +132,7 @@ Voir [`.env.example`](.env.example). Principales :
 | `npm run test:integration` | Test d'intégration du flux commande (plateforme démarrée) |
 | `npm run test:security` | 24 tests d'attaque OWASP contre la plateforme réelle (bloque les connexions de cette IP 1 minute à la fin : test anti brute-force) |
 | `npm run test:resilience` | Pannes réelles (broker arrêté, service tué) : vérifie l'outbox. Plateforme de développement uniquement |
+| `npm run test:contracts [-- --live]` | Contrats des événements : catalogue lu dans le code = catalogue documenté ; `--live` valide tous les événements réels et vérifie qu'un message non conforme part en dead-letter |
 | `npm run test:migrations` | Migrations des 9 bases sur PostgreSQL jetable (après `npm run build`) |
 | `npm run lint` | Analyse statique (ESLint) |
 | `npm run load` | Test de charge k6 |

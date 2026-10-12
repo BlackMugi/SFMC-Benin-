@@ -3,6 +3,7 @@ export * from './context';
 export * from './logger';
 export * from './metrics';
 export * from './events';
+export * from './contracts';
 export * from './auth';
 export * from './jwks';
 export * from './sanitize';

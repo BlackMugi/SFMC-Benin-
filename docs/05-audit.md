@@ -67,6 +67,13 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 - `npm run test:security` : 24 tests contre la plateforme réelle (HTTPS via la gateway et appels directs aux services). Transport (redirection HTTPS, en-têtes) ; JWT (absent, `alg=none`, confusion HS256/clé publique, autre clé RSA, `kid` inventé, contenu altéré, rejeu de refresh token avec révocation de la famille, message identique pour compte inconnu ou mauvais mot de passe) ; autorisation (RBAC, en-têtes `x-user-*` forgés via la gateway et en direct, accès à la commande et à la facture d'un autre client, modification du profil d'un autre, auto-promotion admin, endpoints internes, scopes OAuth2 partenaire) ; entrées (SQLi en paramètre, en identifiant et au login, XSS, mass assignment, DTO stricts, corps > 1 Mo) ; CORS ; limitation des tentatives de connexion.
 - Défaut trouvé : le nettoyage XSS laissait le texte contenu dans une balise `<script>` (`alert(1)`, inoffensif mais inutile). Le contenu des balises `script` et `style` est désormais retiré en entier.
 
+### Contrats entre services (objectif 5)
+- Contrat par événement (15), lié au type TypeScript : un champ manquant ou inventé dans un contrat casse la compilation (vérifié en provoquant les deux erreurs).
+- Appliqué à l'exécution : à l'envoi (outbox, transaction annulée) et à la réception (dead-letter immédiate). Aucune nouvelle dépendance.
+- Preuves : 34 tests unitaires (exemple de référence conforme pour chaque événement, chaque champ obligatoire manquant détecté, types, formats, valeurs, tableaux) ; `npm run test:contracts -- --live` : 77 contrôles, catalogue documenté = code, 320 événements réels conformes sur les 15 types, message cassé injecté dans RabbitMQ écarté en dead-letter et refusé par son consommateur.
+- Défaut trouvé : le catalogue documenté omettait Notification parmi les consommateurs de `ProductionFailed` (alerte équipe). Corrigé ; le test empêche ce type de dérive à l'avenir.
+- Limite : les tests unitaires des services (Order, Billing) utilisent des identifiants simplifiés et ne passent donc pas par la validation des contrats ; les producteurs sont couverts par la validation à l'envoi et par le contrôle des événements réels.
+
 ## 5. Limites assumées (hors périmètre de la démonstration)
 
 - Consul en mode `-dev`, RabbitMQ et PostgreSQL en instance unique : pas de haute disponibilité de l'infrastructure elle-même.
