@@ -4,6 +4,7 @@ export * from './logger';
 export * from './metrics';
 export * from './events';
 export * from './auth';
+export * from './jwks';
 export * from './sanitize';
 export * from './database';
 export * from './options';

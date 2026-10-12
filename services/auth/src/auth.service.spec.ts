@@ -3,7 +3,9 @@ import { AuthService } from './auth.service';
 import { OAuthService } from './oauth.service';
 import { TokensService } from './tokens.service';
 
-process.env.JWT_SECRET = 'test-secret-test-secret-test-secret';
+import { generateKeyPairSync } from 'node:crypto';
+
+process.env.JWT_PRIVATE_KEY = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 process.env.JWT_ISSUER = 'sfmc-auth';
 
 function refreshRepo() {
@@ -22,14 +24,14 @@ function refreshRepo() {
 
 describe('TokensService', () => {
   const tokens = new TokensService();
-  it('signe un access token vérifiable avec rôle et type', () => {
+  it('signe un access token RS256 vérifiable avec rôle et type', async () => {
     const t = tokens.signAccess({ sub: 'u1', role: 'client', email: 'a@b.c' });
-    const p = tokens.verify(t);
+    const p = await tokens.verify(t);
     expect(p).toMatchObject({ sub: 'u1', role: 'client', typ: 'access', iss: 'sfmc-auth' });
   });
-  it('rejette un jeton altéré', () => {
+  it('rejette un jeton altéré', async () => {
     const t = tokens.signAccess({ sub: 'u1', role: 'client' });
-    expect(() => tokens.verify(t.slice(0, -2) + 'xx')).toThrow();
+    await expect(tokens.verify(t.slice(0, -2) + 'xx')).rejects.toThrow();
   });
 });
 
@@ -65,7 +67,7 @@ describe('OAuthService (client credentials)', () => {
 
   it('émet un jeton de service pour des identifiants valides', async () => {
     const res = await svc.clientCredentials('order-service', 's3cret');
-    expect(tokens.verify(res.access_token)).toMatchObject({ sub: 'order-service', role: 'service' });
+    await expect(tokens.verify(res.access_token)).resolves.toMatchObject({ sub: 'order-service', role: 'service' });
   });
   it('refuse un mauvais secret', async () => {
     await expect(svc.clientCredentials('order-service', 'nope')).rejects.toBeInstanceOf(UnauthorizedException);

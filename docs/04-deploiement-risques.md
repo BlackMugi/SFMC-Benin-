@@ -33,6 +33,16 @@ docker compose ps                         # tous les services doivent être « h
 curl https://api.exemple.bj/api/products -H "authorization: Bearer <jeton>"
 ```
 
+### Clé de signature des jetons
+
+- `JWT_PRIVATE_KEY` (générée par `npm run init:env`) n'est transmise qu'à `auth-service`. C'est le secret le plus sensible : la sauvegarder hors du serveur, ne jamais la copier ailleurs.
+- `npm run init:env` sur un `.env` existant ajoute seulement les variables manquantes, sans modifier les mots de passe des bases.
+- **Rotation** (par précaution, ou si la clé a fuité) :
+  1. extraire la clé publique actuelle : `node -e "const c=require('crypto');const k=c.createPublicKey(Buffer.from(process.env.K,'base64').toString());console.log(Buffer.from(k.export({type:'spki',format:'pem'})).toString('base64'))"` avec `K` = valeur actuelle de `JWT_PRIVATE_KEY` ;
+  2. la placer dans `JWT_PREVIOUS_PUBLIC_KEY`, puis générer une nouvelle `JWT_PRIVATE_KEY` : **supprimer la ligne** `JWT_PRIVATE_KEY=...` du `.env` et relancer `npm run init:env` (qui ne recrée que les variables absentes) ;
+  3. `docker compose up -d auth-service` : les nouveaux jetons sont signés avec la nouvelle clé, les anciens restent acceptés ;
+  4. après `JWT_ACCESS_TTL` (15 min par défaut), vider `JWT_PREVIOUS_PUBLIC_KEY` et redémarrer `auth-service`. **En cas de fuite** : à l'étape 2, ne pas renseigner `JWT_PREVIOUS_PUBLIC_KEY` ; puis `docker compose restart` pour vider les caches de clés publiques des services (sinon l'ancienne clé reste acceptée jusqu'à 10 minutes) ; tous les utilisateurs devront se reconnecter.
+
 ### Exploitation
 - **Mise à jour sans interruption** : `docker compose ... up -d --build <service>` recrée une réplique après l'autre pour les services à 2 répliques ; Consul retire l'instance qui s'arrête.
 - **Sauvegarde** : `docker compose exec <service>-db pg_dump -U <user> <base> > sauvegarde.sql` (une base par service), à planifier chaque nuit (cron) et à copier hors du serveur. Volumes à conserver : `*-db-data`, `grafana-data`.

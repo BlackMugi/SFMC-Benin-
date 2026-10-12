@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth';
 import { ConsulService } from './consul';
 import { EventBus } from './event-bus';
+import { hasSigningKey, Jwks, keyStore } from './jwks';
 import { Outbox } from './outbox';
 import { HealthController } from './health.controller';
 import { MetricsService } from './metrics';
@@ -12,10 +13,23 @@ import { OAuthTokenProvider, ServiceClient, ServiceTokenProvider } from './servi
 @Global()
 @Module({})
 export class CommonModule implements OnModuleInit {
-  constructor(@Inject(SFMC_OPTIONS) private readonly options: SfmcOptions, private readonly bus: EventBus) {}
+  constructor(
+    @Inject(SFMC_OPTIONS) private readonly options: SfmcOptions,
+    private readonly bus: EventBus,
+    private readonly consul: ConsulService,
+  ) {}
 
   /** Ouvre la connexion au broker au démarrage (sans bloquer si le service n'utilise pas d'événements). */
   async onModuleInit() {
+    // Clés publiques de vérification des jetons : chez auth-service (via Consul), sauf pour auth-service lui-même
+    if (!hasSigningKey()) {
+      keyStore.setResolver(async () => {
+        const base = await this.consul.resolve('auth-service');
+        const res = await fetch(`${base}/oauth/jwks`, { signal: AbortSignal.timeout(3000) });
+        if (!res.ok) throw new Error(`JWKS indisponible (HTTP ${res.status})`);
+        return (await res.json()) as Jwks;
+      });
+    }
     if (this.options.events !== false) await this.bus.connect();
   }
 

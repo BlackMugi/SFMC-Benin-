@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { env, envInt } from '@sfmc/common';
+import { envInt, signAccessToken, verifyJwt } from '@sfmc/common';
 
 export interface AccessClaims {
   sub: string;
@@ -20,12 +20,13 @@ export class TokensService {
     return envInt('JWT_REFRESH_TTL_DAYS', 7) * 86_400_000;
   }
 
+  /** Signature RS256 avec la clé privée (seul auth-service la possède). */
   signAccess(claims: AccessClaims, ttlSeconds = this.accessTtl): string {
-    return jwt.sign({ ...claims, typ: 'access' }, env('JWT_SECRET'), { algorithm: 'HS256', issuer: env('JWT_ISSUER', 'sfmc-auth'), expiresIn: ttlSeconds });
+    return signAccessToken({ ...claims }, ttlSeconds);
   }
 
-  verify(token: string): jwt.JwtPayload {
-    return jwt.verify(token, env('JWT_SECRET'), { issuer: env('JWT_ISSUER', 'sfmc-auth'), algorithms: ['HS256'] }) as jwt.JwtPayload;
+  verify(token: string): Promise<jwt.JwtPayload> {
+    return verifyJwt(token);
   }
 
   /** Jeton opaque à forte entropie (refresh token, secret client). */

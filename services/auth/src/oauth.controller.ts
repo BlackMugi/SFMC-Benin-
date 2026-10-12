@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, UnauthorizedException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Public, Role, Roles } from '@sfmc/common';
+import { Public, publicJwks, Role, Roles } from '@sfmc/common';
 import { CreateClientDto, IntrospectDto, TokenRequestDto } from './auth.dto';
 import { OAuthService } from './oauth.service';
 
@@ -23,6 +23,13 @@ export class OAuthController {
     }
     if (!id || !secret) throw new UnauthorizedException('invalid_client');
     return this.oauth.clientCredentials(id, secret, dto.scope);
+  }
+
+  @Public()
+  @Get('jwks')
+  @ApiOperation({ summary: 'Clés publiques de vérification des jetons (JWKS, RFC 7517). Seul auth-service possède la clé privée.' })
+  jwks() {
+    return publicJwks();
   }
 
   @Roles(Role.Service, Role.Admin)

@@ -46,9 +46,9 @@ export class OAuthService implements OnModuleInit {
   }
 
   /** RFC 7662 */
-  introspect(token: string) {
+  async introspect(token: string) {
     try {
-      const p = this.tokens.verify(token);
+      const p = await this.tokens.verify(token);
       return { active: true, sub: p.sub, role: p.role, email: p.email, scope: p.scope, exp: p.exp, iss: p.iss };
     } catch {
       return { active: false };

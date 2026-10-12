@@ -1,7 +1,6 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata, UnauthorizedException, createParamDecorator } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, ServiceUnavailableException, SetMetadata, UnauthorizedException, createParamDecorator } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import * as jwt from 'jsonwebtoken';
-import { env } from './config';
+import { KeysUnavailableError, verifyJwt } from './jwks';
 
 export enum Role {
   Admin = 'admin',
@@ -28,8 +27,9 @@ export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
 
 export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext): AuthUser => ctx.switchToHttp().getRequest().user);
 
-export function verifyAccessToken(token: string): AuthUser {
-  const payload = jwt.verify(token, env('JWT_SECRET'), { issuer: env('JWT_ISSUER', 'sfmc-auth'), algorithms: ['HS256'] }) as jwt.JwtPayload;
+/** Vérifie un jeton d'accès RS256 avec la clé publique d'auth-service (JWKS). */
+export async function verifyAccessToken(token: string): Promise<AuthUser> {
+  const payload = await verifyJwt(token);
   if (payload.typ !== 'access') throw new Error('type de jeton invalide');
   return {
     id: String(payload.sub),
@@ -49,7 +49,7 @@ export function extractBearer(header?: string): string | undefined {
 export class AuthGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') return true;
     const targets = [context.getHandler(), context.getClass()];
     if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, targets)) return true;
@@ -58,8 +58,9 @@ export class AuthGuard implements CanActivate {
     const token = extractBearer(req.headers.authorization);
     if (!token) throw new UnauthorizedException('Jeton manquant');
     try {
-      req.user = verifyAccessToken(token);
-    } catch {
+      req.user = await verifyAccessToken(token);
+    } catch (e) {
+      if (e instanceof KeysUnavailableError) throw new ServiceUnavailableException('Vérification des jetons momentanément indisponible');
       throw new UnauthorizedException('Jeton invalide ou expiré');
     }
     const roles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, targets);

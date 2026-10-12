@@ -88,7 +88,7 @@ Fin de fabrication : la machine est libérée et le lot passe à `QUALITY_CHECK`
 ## Sécurité (OWASP)
 
 - **HTTPS** via nginx (certificat auto-signé généré au démarrage, TLS 1.2+, HSTS) ; en production, monter un vrai certificat dans le volume `nginx-certs`.
-- **JWT HS256** : émis par Auth, vérifié à la Gateway **et** dans chaque service (défense en profondeur) ; RBAC par `@Roles()` ; les en-têtes `x-user-*` du client sont supprimés puis réécrits par la Gateway.
+- **JWT RS256 + JWKS** : seul Auth possède la clé privée et signe les jetons ; la Gateway et chaque service vérifient avec la clé publique, récupérée chez Auth via Consul (`GET /oauth/jwks`, public sur `/api/oauth/jwks`). Un service compromis ne peut donc pas fabriquer de jeton. Seul l'algorithme RS256 est accepté (`alg=none` et la confusion HS256/clé publique sont rejetés). Jetons vérifié à la Gateway **et** dans chaque service (défense en profondeur) ; RBAC par `@Roles()` ; les en-têtes `x-user-*` du client sont supprimés puis réécrits par la Gateway.
 - Endpoints `internal`, `/metrics`, `/health` non routés par la Gateway ; réservés au rôle `service` (jeton *client credentials*).
 - **Validation stricte** : `ValidationPipe` (`whitelist` + `forbidNonWhitelisted`), DTO typés, UUID validés, bornes numériques ; texte libre assaini (balises HTML retirées).
 - **Injection SQL** : uniquement requêtes paramétrées (TypeORM). **XSS** : `helmet` (CSP, nosniff…) + assainissement. **CSRF** : API sans cookie, jeton Bearer dans l'en-tête (pas de session ambiante à forger). **CORS** : origines explicites (`CORS_ORIGINS`).
@@ -108,7 +108,7 @@ Voir [`.env.example`](.env.example). Principales :
 
 | Variable | Rôle |
 |---|---|
-| `JWT_SECRET`, `JWT_ISSUER`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL_DAYS` | Jetons |
+| `JWT_PRIVATE_KEY` (auth-service uniquement), `JWT_PREVIOUS_PUBLIC_KEY`, `JWT_ISSUER`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL_DAYS` | Jetons RS256 (voir « Sécurité ») |
 | `RABBITMQ_USER/PASSWORD` | Broker |
 | `<SERVICE>_DB_PASSWORD` | Mot de passe de la base de chaque service |
 | `ORDER_CLIENT_SECRET`, `PARTNER_DEMO_CLIENT_SECRET` | Secrets OAuth2 client credentials (Order → autres services ; partenaire de démo) |
@@ -194,6 +194,5 @@ scripts/            init-env.mjs, demo.mjs
 
 ## Limites connues / pistes
 
-- JWT HS256 à secret partagé : passer à RS256 + JWKS pour isoler la clé de signature.
 - Publication d'événements après commit sans *outbox* : un crash entre les deux pourrait perdre un événement (atténué à la création de commande par rejet compensatoire).
 - Consul en mode `-dev` (un seul nœud, non persistant) ; RabbitMQ et PostgreSQL en instance unique.

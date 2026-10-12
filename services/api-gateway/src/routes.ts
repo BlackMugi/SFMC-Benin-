@@ -21,6 +21,8 @@ interface PublicRoute {
 export const PUBLIC_ROUTES: PublicRoute[] = [
   { method: 'POST', pattern: /^\/api\/auth\/(login|refresh|logout)\/?$/ },
   { method: 'POST', pattern: /^\/api\/oauth\/token\/?$/ },
+  // Clés publiques de vérification des jetons (JWKS) : publiques par nature, utiles aux intégrations externes
+  { method: 'GET', pattern: /^\/api\/oauth\/jwks\/?$/ },
   { method: 'POST', pattern: /^\/api\/users\/register\/?$/ },
 ];
 

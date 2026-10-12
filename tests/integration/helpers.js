@@ -18,7 +18,7 @@ function loadEnv() {
 }
 
 const env = loadEnv();
-const BASE_URL = (env.BASE_URL || `https://localhost:${env.HTTPS_PORT || 8443}`).replace(/\/$/, '');
+const BASE_URL = (env.BASE_URL || `https://127.0.0.1:${env.HTTPS_PORT || 8443}`).replace(/\/$/, '');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

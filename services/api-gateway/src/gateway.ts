@@ -2,7 +2,7 @@ import { INestApplication, Logger } from '@nestjs/common';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import rateLimit from 'express-rate-limit';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { ConsulService, CORRELATION_HEADER, env, envInt, extractBearer, getCorrelationId, verifyAccessToken } from '@sfmc/common';
+import { ConsulService, CORRELATION_HEADER, env, envInt, extractBearer, getCorrelationId, KeysUnavailableError, verifyAccessToken } from '@sfmc/common';
 import { BLOCKED, isPublic, pathOf, serviceFor } from './routes';
 
 const log = new Logger('Gateway');
@@ -53,7 +53,7 @@ export function setupGateway(app: INestApplication) {
   app.use(['/api/auth', '/api/oauth', '/api/users/register'], authLimiter);
 
   // --- Garde-fous + authentification centralisée ---
-  app.use('/api', (req: GatewayRequest, res: Response, next: NextFunction) => {
+  app.use('/api', async (req: GatewayRequest, res: Response, next: NextFunction) => {
     const url = req.originalUrl;
     // L'identité est exclusivement fournie par la gateway : on retire tout en-tête x-user-* du client.
     for (const h of Object.keys(req.headers)) if (h.startsWith('x-user-')) delete req.headers[h];
@@ -65,12 +65,13 @@ export function setupGateway(app: INestApplication) {
     const token = extractBearer(req.headers.authorization);
     if (!token) return json(res, 401, 'Authentification requise');
     try {
-      const user = verifyAccessToken(token);
+      const user = await verifyAccessToken(token);
       // Identité propagée aux services (qui revérifient aussi le JWT)
       req.headers['x-user-id'] = user.id;
       req.headers['x-user-role'] = user.role;
       if (user.email) req.headers['x-user-email'] = user.email;
-    } catch {
+    } catch (e) {
+      if (e instanceof KeysUnavailableError) return json(res, 503, 'Vérification des jetons momentanément indisponible');
       return json(res, 401, 'Jeton invalide ou expiré');
     }
     next();

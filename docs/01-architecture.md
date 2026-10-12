@@ -58,6 +58,7 @@ flowchart TB
     order -->|REST: prix| product
     order -->|REST: disponibilité| inventory
     order -->|REST: jeton client credentials| auth
+    gw -->|REST: clés publiques JWKS| auth
 
     order <-->|événements| mq
     inventory <-->|événements| mq
@@ -79,7 +80,7 @@ flowchart TB
 | Database per service | Chaque service a son propre conteneur PostgreSQL ; aucune requête SQL inter-services |
 | Sync (REST) | Order → Product (prix), Order → Inventory (disponibilité), Auth → User (identifiants) ; résolus via Consul |
 | Async (RabbitMQ) | Tous les changements d'état métier sont publiés en événements via une **outbox transactionnelle** ; consommateurs dédupliqués par identifiant d'événement, ré-essais puis dead-letter |
-| Sécurité | JWT vérifié à la Gateway **et** dans chaque service (défense en profondeur) ; RBAC par `@Roles()` |
+| Sécurité | Jetons RS256 signés par Auth seul (clé privée) ; vérifiés à la Gateway **et** dans chaque service avec la clé publique (JWKS, mise en cache, rechargée en cas de clé inconnue) ; RBAC par `@Roles()` |
 | Observabilité | `/health`, `/metrics`, logs JSON avec `correlationId` propagé en HTTP (`x-correlation-id`) et dans les événements |
 
 ## Publication fiable des événements (outbox)

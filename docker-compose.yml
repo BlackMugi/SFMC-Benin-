@@ -4,7 +4,6 @@ name: sfmc
 x-common-env: &common-env
   NODE_ENV: production
   LOG_LEVEL: ${LOG_LEVEL:-info}
-  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant - lancer npm run init:env}
   JWT_ISSUER: ${JWT_ISSUER:-sfmc-auth}
   RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
   CONSUL_HOST: consul
@@ -208,6 +207,9 @@ services:
       DB_PASSWORD: ${AUTH_DB_PASSWORD}
       ORDER_CLIENT_SECRET: "${ORDER_CLIENT_SECRET}"
       PARTNER_DEMO_CLIENT_SECRET: "${PARTNER_DEMO_CLIENT_SECRET}"
+      # Seul service à posséder la clé privée de signature (les autres vérifient via le JWKS)
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY manquant - lancer npm run init:env}
+      JWT_PREVIOUS_PUBLIC_KEY: ${JWT_PREVIOUS_PUBLIC_KEY:-}
       JWT_ACCESS_TTL: "${JWT_ACCESS_TTL:-900}"
       JWT_REFRESH_TTL_DAYS: "${JWT_REFRESH_TTL_DAYS:-7}"
     ports: ["127.0.0.1:3001:3000"]

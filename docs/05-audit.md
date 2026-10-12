@@ -57,8 +57,13 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 - Preuve : `npm run test:resilience` (2/2) : broker arrêté + crash de `order-service` → commande validée et facturée après redémarrage, aucune ligne restée en attente ; doublon renvoyé à la main → ignoré, aucune réservation en plus.
 - Limite : un consommateur qui plante **après** son traitement mais **avant** d'enregistrer l'identifiant retraitera l'événement ; c'est sans effet car chaque traitement est lui-même idempotent (compare-and-set, clés d'unicité), mais ce n'est pas une garantie « exactement une fois » au sens strict.
 
+### Jetons RS256 + JWKS (objectif 3)
+- Avant : un secret partagé (HS256) par les 10 services servait à signer **et** à vérifier ; un seul service compromis permettait de fabriquer des jetons administrateur.
+- Après : clé privée RSA 2048 chez `auth-service` uniquement ; publication JWKS (`kid` = empreinte RFC 7638) ; vérification par clé publique partout, avec cache et rechargement limité (une fois toutes les 5 s au plus en cas de `kid` inconnu, une seule requête à la fois ; rechargement complet toutes les 10 min) ; rotation par clé précédente ; `JWT_SECRET` supprimé. Aucune nouvelle dépendance (crypto native de Node).
+- Si `auth-service` est injoignable au moment où un service doit charger les clés : réponse 503 (et non 401), pour ne pas déconnecter les utilisateurs à tort.
+- Preuves : tests unitaires (jeton valide, clé précédente acceptée, autre clé, `alg=none`, confusion HS256/clé publique, `kid` inventé, type `refresh`, aucune partie privée dans le JWKS) ; sur la plateforme : clé privée présente dans le seul conteneur `auth-service`, `JWT_SECRET` absent partout, attaque par confusion d'algorithme refusée à la gateway et directement sur un service (401), jetons émis en RS256 avec un `kid` publié.
+
 ## 5. Limites assumées (hors périmètre de la démonstration)
 
-- JWT en HS256 avec secret partagé : passer à RS256 + JWKS pour isoler la clé de signature.
 - Consul en mode `-dev`, RabbitMQ et PostgreSQL en instance unique : pas de haute disponibilité de l'infrastructure elle-même.
 - Rate limit compté par instance de gateway.
