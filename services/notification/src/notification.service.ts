@@ -28,7 +28,7 @@ export class NotificationService implements OnModuleInit {
     const msg = render(e);
     if (!msg) return;
     const recipient = msg.recipient === 'ops' ? env('ADMIN_NOTIFY_EMAIL', 'ops@sfmc.bj') : await this.customerEmail(e);
-    // Contact client pas encore connu (OrderCreated en cours de traitement) : on laisse le bus ré-essayer.
+    // Contact client pas encore connu : le bus ré-essaiera.
     if (!recipient) throw new Error(`destinataire inconnu pour ${e.type} (commande ${orderIdOf(e) ?? '-'})`);
     if (await this.notifications.exists({ where: { eventId: e.id, recipient, status: 'SENT' } })) return; // rejeu
     let status: 'SENT' | 'FAILED' = 'SENT';
@@ -42,10 +42,10 @@ export class NotificationService implements OnModuleInit {
       { eventId: e.id, eventType: e.type, recipient, channel: this.provider.channel, subject: msg.subject, body: msg.body, status, correlationId: e.correlationId },
       ['eventId', 'recipient'],
     );
-    if (status === 'FAILED') throw new Error('envoi de notification échoué'); // -> ré-essai puis dead-letter
+    if (status === 'FAILED') throw new Error('envoi de notification échoué'); // ré-essai puis dead-letter
   }
 
-  /** E-mail du client : porté par l'événement, sinon retrouvé par la commande (contact mémorisé à OrderCreated). */
+  /** E-mail du client : dans l'événement, sinon retrouvé par la commande. */
   private async customerEmail(e: DomainEvent): Promise<string | null> {
     if ('customerEmail' in e.payload && e.payload.customerEmail) return e.payload.customerEmail;
     const orderId = orderIdOf(e);

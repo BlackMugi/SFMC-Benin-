@@ -3,7 +3,7 @@ import { ServiceTokenProvider, signAccessToken } from '@sfmc/common';
 
 /**
  * auth-service signe lui-même son jeton de service (rôle "service", 60 s) pour appeler user-service.
- * Aucune dépendance Nest : ce provider est instancié par le CommonModule global.
+ * Pas de dépendance Nest : instancié par le CommonModule global.
  */
 @Injectable()
 export class LocalTokenProvider extends ServiceTokenProvider {

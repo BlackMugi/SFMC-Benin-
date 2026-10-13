@@ -18,11 +18,9 @@ import {
 } from './events';
 
 /**
- * Contrats des événements : format exact de chaque message échangé entre services.
- * - Compilation : SchemaFor<T> impose que le contrat liste exactement les champs de l'interface TypeScript.
- * - Exécution : l'Outbox refuse un événement non conforme (transaction annulée) ; le bus envoie un message reçu
- *   non conforme directement en dead-letter. Les champs supplémentaires sont tolérés à la réception (évolution
- *   compatible : un producteur peut ajouter un champ sans casser ses consommateurs).
+ * Contrats des événements : format de chaque message échangé entre services.
+ * Un événement non conforme est refusé par l'outbox à l'écriture et part en dead-letter à la réception.
+ * Les champs en plus sont tolérés à la réception.
  */
 
 type Kind = 'string' | 'number' | 'integer' | 'uuid' | 'datetime';
@@ -31,7 +29,7 @@ export type Field =
   | { kind: 'array'; optional?: boolean; of: Schema; minItems?: number }
   | { kind: 'object'; optional?: boolean; of: Schema };
 export type Schema = Record<string, Field>;
-/** Un contrat par interface : mêmes clés, ni plus ni moins (vérifié par le compilateur). */
+/** Un contrat par interface, mêmes clés. */
 type SchemaFor<T> = { [K in keyof Required<T>]: Field };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,7 +47,7 @@ const orderLine: Schema = {
   quantity: int(1),
   unitPrice: num(0),
 };
-// customerEmail peut être vide (compte sans e-mail connu) : chaîne, pas d'exigence de format
+// customerEmail peut être vide
 const orderRef = { orderId: uuid(), customerId: uuid(), customerEmail: str() };
 
 const OrderCreated: SchemaFor<OrderCreatedPayload> = {
@@ -82,7 +80,7 @@ const ProductionCompleted: SchemaFor<ProductionCompletedPayload> = {
   productId: uuid(),
   productName: str(),
   quantity: int(1),
-  machineId: str(), // vide pour un ordre sans machine
+  machineId: str(), // vide sans machine
 };
 const ProductionFailed: SchemaFor<ProductionFailedPayload> = { workOrderId: uuid(true), orderId: uuid(true), productId: uuid(), reason: str() };
 const StockUpdated: SchemaFor<StockUpdatedPayload> = {
@@ -104,7 +102,7 @@ const OrderShipped: SchemaFor<OrderShippedPayload> = { ...orderRef, items: { kin
 const InvoiceIssued: SchemaFor<InvoiceIssuedPayload> = { ...orderRef, invoiceId: uuid(), number: str(), amount: num(0), currency: str() };
 const InvoicePaid: SchemaFor<InvoicePaidPayload> = { invoiceId: uuid(), orderId: uuid(), amount: num(0), method: str(), customerEmail: str() };
 
-/** Un contrat par type d'événement (le compilateur refuse un type sans contrat). */
+/** Un contrat par type d'événement. */
 export const EVENT_CONTRACTS: Record<EventType, Schema> = {
   OrderCreated,
   StockReserved,
@@ -160,7 +158,7 @@ function checkObject(path: string, value: unknown, schema: Schema, errors: strin
   for (const [key, field] of Object.entries(schema)) checkField(path ? `${path}.${key}` : key, (value as Record<string, unknown>)[key], field, errors);
 }
 
-/** Liste des écarts au contrat (vide si conforme). */
+/** Écarts au contrat (vide si conforme). */
 export function contractViolations(type: string, payload: unknown): string[] {
   const schema = EVENT_CONTRACTS[type as EventType];
   if (!schema) return [`type d'événement inconnu : ${type}`];

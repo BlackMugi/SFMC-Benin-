@@ -1,8 +1,8 @@
 // Test des migrations de chaque service sur un PostgreSQL jetable (Docker) :
-//  1. base vide -> up : toutes les migrations passent
-//  2. le schéma obtenu correspond exactement aux entités (aucune différence détectée par TypeORM)
-//  3. down jusqu'au bout : plus aucune table métier ; puis up à nouveau
-//  4. baseline : une base créée par l'ancien mode synchronize est reprise sans perte (migration initiale marquée appliquée)
+//  1. base vide, up : toutes les migrations passent
+//  2. le schéma obtenu correspond aux entités
+//  3. down complet : plus de table métier, puis up à nouveau
+//  4. baseline : une base créée par synchronize est reprise sans perte
 // Usage : npm run build && npm run test:migrations
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -41,7 +41,7 @@ await withTempPostgres(async (connect) => {
       await ds.destroy();
     }
 
-    // 4 : base existante créée par synchronize (comme avant les migrations) avec un marqueur de données
+    // 4 : base créée par synchronize, avec une ligne de données
     const legacyEntities = entities.filter((e) => !['OutboxEvent', 'ProcessedEvent'].includes(e.name)); // ces tables n'existaient pas avant
     const legacy = new DataSource({ ...(await connect(`${service}_legacy`)), entities: legacyEntities, synchronize: true });
     await legacy.initialize();

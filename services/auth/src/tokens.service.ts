@@ -20,7 +20,7 @@ export class TokensService {
     return envInt('JWT_REFRESH_TTL_DAYS', 7) * 86_400_000;
   }
 
-  /** Signature RS256 avec la clé privée (seul auth-service la possède). */
+  /** Signature RS256 avec la clé privée. */
   signAccess(claims: AccessClaims, ttlSeconds = this.accessTtl): string {
     return signAccessToken({ ...claims }, ttlSeconds);
   }
@@ -29,7 +29,7 @@ export class TokensService {
     return verifyJwt(token);
   }
 
-  /** Jeton opaque à forte entropie (refresh token, secret client). */
+  /** Jeton opaque à forte entropie. */
   randomToken(bytes = 48): string {
     return randomBytes(bytes).toString('base64url');
   }
@@ -38,7 +38,7 @@ export class TokensService {
     return createHash('sha256').update(value).digest('hex');
   }
 
-  /** Comparaison à temps constant de deux empreintes hexadécimales. */
+  /** Comparaison à temps constant de deux empreintes hex. */
   safeEqual(a: string, b: string): boolean {
     const ba = Buffer.from(a);
     const bb = Buffer.from(b);

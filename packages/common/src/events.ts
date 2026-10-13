@@ -79,12 +79,11 @@ export interface EventPayloads {
 }
 
 /**
- * Événement reçu, typé selon son type : après `switch (e.type)` ou `if (e.type === 'X')`, le compilateur connaît
- * le contenu exact de e.payload (un champ inexistant ou mal orthographié devient une erreur de compilation).
+ * Événement reçu, typé selon son type : après un `switch (e.type)` le compilateur connaît le contenu de e.payload.
  */
 export type DomainEvent = { [K in EventType]: EventEnvelope<EventPayloads[K]> & { type: K } }[EventType];
 
-/** Commande concernée par l'événement, s'il y en a une (StockLow ou un mouvement de stock manuel n'en ont pas). */
+/** Commande concernée, s'il y en a une (StockLow et les mouvements manuels n'en ont pas). */
 export function orderIdOf(e: DomainEvent): string | null {
   return 'orderId' in e.payload && typeof e.payload.orderId === 'string' ? e.payload.orderId : null;
 }

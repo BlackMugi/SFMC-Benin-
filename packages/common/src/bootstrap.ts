@@ -26,7 +26,7 @@ export async function bootstrapService(module: unknown, opts: BootstrapOptions):
   app.useLogger(new JsonLogger(opts.serviceName));
   app.set('trust proxy', 1);
 
-  // correlation-id : repris de l'en-tête entrant ou généré, exposé dans la réponse et dans les logs
+  // correlation-id : repris de l'en-tête ou généré
   app.use((req: Request, res: Response, next: NextFunction) => {
     const incoming = req.headers[CORRELATION_HEADER];
     runWithContext(Array.isArray(incoming) ? incoming[0] : incoming, () => {
@@ -35,7 +35,7 @@ export async function bootstrapService(module: unknown, opts: BootstrapOptions):
     });
   });
 
-  // En-têtes de sécurité (helmet) ; CSP assouplie uniquement pour l'UI Swagger.
+  // helmet ; CSP assouplie pour l'UI Swagger
   const strict = helmet();
   const swaggerUi = helmet({ contentSecurityPolicy: false });
   app.use((req: Request, res: Response, next: NextFunction) => (req.path.startsWith('/docs') ? swaggerUi(req, res, next) : strict(req, res, next)));

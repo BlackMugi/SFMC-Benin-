@@ -1,4 +1,4 @@
-/** Lit une variable d'environnement. Pas de secret par défaut : une variable requise absente fait échouer le démarrage. */
+/** Lit une variable d'environnement. Une variable requise absente fait échouer le démarrage. */
 export function env(name: string, fallback?: string): string {
   const v = process.env[name];
   if (v !== undefined && v !== '') return v;

@@ -9,7 +9,7 @@ import { EventBus } from './event-bus';
 import { EventEnvelope, EventType } from './events';
 import { SFMC_OPTIONS, SfmcOptions } from './options';
 
-/** Événement à publier, écrit dans la même transaction que le changement d'état qui le produit. */
+/** Événement à publier, écrit dans la transaction du changement d'état. */
 @Entity('outbox')
 @Index('IDX_outbox_unpublished', ['seq'], { where: 'published_at IS NULL' })
 export class OutboxEvent {
@@ -43,7 +43,7 @@ export class OutboxEvent {
   lastError: string | null;
 }
 
-/** Événements déjà traités par un consommateur (déduplication des livraisons multiples). */
+/** Événements déjà traités par un consommateur (déduplication). */
 @Entity('processed_events')
 export class ProcessedEvent {
   @PrimaryColumn({ name: 'event_id', type: 'uuid' })
@@ -56,7 +56,7 @@ export class ProcessedEvent {
   processedAt: Date;
 }
 
-/** Entités à ajouter au TypeOrmModule.forFeature() des services qui publient ou consomment des événements. */
+/** À ajouter au TypeOrmModule.forFeature() des services qui publient ou consomment. */
 export const OUTBOX_ENTITIES = [OutboxEvent, ProcessedEvent];
 
 export interface PendingEvent {
@@ -65,9 +65,9 @@ export interface PendingEvent {
 }
 
 /**
- * Outbox transactionnelle : un changement d'état et les événements qu'il produit sont enregistrés atomiquement,
- * puis un relais les publie sur RabbitMQ (au moins une fois, dans l'ordre d'écriture, avec ré-essais).
- * Plusieurs répliques peuvent relayer en parallèle sans doublon de traitement (FOR UPDATE SKIP LOCKED).
+ * Outbox transactionnelle : le changement d'état et ses événements sont écrits dans la même transaction,
+ * puis un relais les publie sur RabbitMQ (au moins une fois, dans l'ordre, avec ré-essais).
+ * Plusieurs répliques peuvent relayer en parallèle (FOR UPDATE SKIP LOCKED).
  */
 @Injectable()
 export class Outbox implements OnModuleInit, OnApplicationShutdown {
@@ -101,8 +101,8 @@ export class Outbox implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * Exécute fn dans une transaction ; les événements ajoutés à `events` sont écrits dans l'outbox avant le commit.
-   * Si la transaction échoue, aucun événement n'est publié ; si elle réussit, aucun n'est perdu.
+   * Exécute fn dans une transaction ; les événements de `events` sont écrits avant le commit.
+   * Si la transaction échoue, rien n'est publié.
    */
   async run<T>(fn: (m: EntityManager, events: PendingEvent[]) => Promise<T>): Promise<T> {
     const result = await this.dataSource().transaction(async (m) => {
@@ -115,10 +115,10 @@ export class Outbox implements OnModuleInit, OnApplicationShutdown {
     return result;
   }
 
-  /** Ajoute des événements à l'outbox dans une transaction déjà ouverte par l'appelant. */
+  /** Ajoute des événements dans une transaction ouverte par l'appelant. */
   async enqueue(m: EntityManager, events: PendingEvent[]) {
     if (!events.length) return;
-    // Contrat vérifié avant l'écriture : un événement mal formé annule la transaction au lieu de casser un consommateur
+    // Contrat vérifié avant l'écriture : un événement mal formé annule la transaction
     for (const e of events) assertContract(e.type, e.payload);
     const correlationId = getCorrelationId() ?? randomUUID();
     const now = Date.now();
@@ -128,7 +128,7 @@ export class Outbox implements OnModuleInit, OnApplicationShutdown {
     );
   }
 
-  /** Déclenche un passage du relais (sans attendre) ; les appels concurrents sont regroupés. */
+  /** Lance un passage du relais sans attendre ; les appels concurrents sont regroupés. */
   nudge() {
     if (this.relaying) {
       this.again = true;
@@ -145,7 +145,7 @@ export class Outbox implements OnModuleInit, OnApplicationShutdown {
       });
   }
 
-  /** Publie les événements en attente par lots ; s'arrête au premier échec (ré-essai au prochain passage). */
+  /** Publie les événements en attente par lots, s'arrête au premier échec. */
   async relay(): Promise<number> {
     let total = 0;
     for (;;) {
@@ -185,7 +185,7 @@ export class Outbox implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  /** Purge des événements publiés (rétention configurable, 7 jours par défaut) et des traces de déduplication. */
+  /** Purge des événements publiés (7 jours par défaut) et des traces de déduplication. */
   private async cleanup() {
     try {
       const days = envInt('OUTBOX_RETENTION_DAYS', 7);

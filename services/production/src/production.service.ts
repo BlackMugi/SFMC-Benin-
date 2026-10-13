@@ -66,7 +66,7 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
       );
       this.log.log('Machines de démonstration créées');
     }
-    // Reprise après redémarrage : les machines "BUSY" sans ordre en cours redeviennent libres.
+    // Reprise après redémarrage : les machines BUSY sans ordre en cours redeviennent libres.
     await this.releaseOrphanMachines();
     await this.bus.subscribe('production.requests', [EVENTS.ProductionRequested], async (e) => {
       if (e.type === 'ProductionRequested') await this.onProductionRequested(e.payload);
@@ -78,7 +78,7 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
     if (this.timer) clearInterval(this.timer);
   }
 
-  // ------------------------------------------------------------------ Événements
+  // Événements
 
   async onProductionRequested(p: ProductionRequestedPayload) {
     const reason = await this.rejectionReason(p.category, p.quantity);
@@ -99,7 +99,7 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
     return capable ? null : `aucune machine disponible pour la catégorie « ${category} »`;
   }
 
-  // ------------------------------------------------------------------ API
+  // API
 
   async createWorkOrder(d: { orderId: string | null; productId: string; productName: string; category: ProductCategory; quantity: number; urgency: number; requiredBy: Date | null }) {
     const now = new Date();
@@ -183,12 +183,12 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
     return concat(snapshot, merge(live, heartbeat));
   }
 
-  // ------------------------------------------------------------------ Planificateur (1 s)
+  // Planificateur (tick de 1 s)
 
   /**
-   * Chaque tick : (1) affecte les ordres en attente aux machines libres selon la priorité,
-   * (2) fait avancer les ordres en cours, (3) termine ceux qui ont atteint 100 %.
-   * Toutes les transitions sont des compare-and-set SQL : plusieurs instances peuvent tourner sans doublon.
+   * Un tick : (1) affecte les ordres en attente aux machines libres par priorité, (2) fait avancer les ordres
+   * en cours, (3) termine ceux à 100 %. Toutes les transitions sont des compare-and-set SQL, donc
+   * plusieurs instances peuvent tourner sans doublon.
    */
   async tick(): Promise<void> {
     if (this.ticking) return;
@@ -242,7 +242,7 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
         this.progress$.next(this.toEvent({ ...wo, progress: pct }, machine?.name ?? null));
         continue;
       }
-      // Fabrication terminée : la machine est libérée, le lot passe au contrôle qualité avant mise en stock.
+      // Fabrication terminée : machine libérée, le lot passe au contrôle qualité avant la mise en stock.
       const done = await this.workOrders.update({ id: wo.id, status: 'IN_PROGRESS' }, { status: 'QUALITY_CHECK', progress: 100 });
       if (!done.affected) continue; // traité par une autre instance
       if (wo.machineId) await this.machines.update({ id: wo.machineId }, { status: 'IDLE' });
@@ -251,14 +251,14 @@ export class ProductionService implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
-  /** Inspecte les lots en attente de contrôle : conforme -> ProductionCompleted, non conforme -> ProductionFailed (compensation côté commande). */
+  /** Inspecte les lots en attente : conforme, ProductionCompleted ; non conforme, ProductionFailed. */
   private async inspect() {
     const waiting = await this.workOrders.find({ where: { status: 'QUALITY_CHECK' } });
     for (const wo of waiting) {
       if (Date.now() - wo.updatedAt.getTime() < this.qualitySeconds * 1000) continue;
       const passed = Math.random() >= this.qualityFailRate;
       const notes = passed ? 'Lot conforme' : 'Lot non conforme : rebut';
-      // Résultat du contrôle et événement associé dans la même transaction (outbox)
+      // Résultat du contrôle et événement dans la même transaction (outbox)
       const applied = await this.outbox.run(async (m, events) => {
         const res = await m.update(
           WorkOrder,

@@ -57,7 +57,7 @@ export class InventoryService implements OnModuleInit {
     );
   }
 
-  // ------------------------------------------------------------------ Saga (chorégraphie)
+  // Saga (chorégraphie)
 
   private async handleEvent(e: DomainEvent): Promise<void> {
     switch (e.type) {
@@ -73,7 +73,7 @@ export class InventoryService implements OnModuleInit {
     }
   }
 
-  /** Tente de réserver atomiquement tous les articles de la commande. */
+  /** Réserve atomiquement tous les articles de la commande. */
   private async onOrderCreated(p: OrderCreatedPayload) {
     const items = mergeItems(p.items.map((i) => ({ productId: i.productId, quantity: i.quantity })));
     await this.outbox.run(async (m, pending) => {
@@ -88,7 +88,7 @@ export class InventoryService implements OnModuleInit {
     });
   }
 
-  /** Production terminée : entrée de stock, puis nouvelle tentative de réservation pour la commande en attente. */
+  /** Production terminée : entrée de stock, puis nouvelle tentative de réservation. */
   private async onProductionCompleted(p: ProductionCompletedPayload) {
     await this.outbox.run(async (m, pending) => {
       const reference = `wo:${p.workOrderId}`;
@@ -143,11 +143,11 @@ export class InventoryService implements OnModuleInit {
     });
   }
 
-  // ------------------------------------------------------------------ Cœur : allocation, mouvements, seuil critique
+  // Allocation, mouvements, seuil critique
 
   private async attemptAllocation(m: EntityManager, res: Reservation, pending: Pending[]): Promise<AllocationOutcome> {
     const ids = [...new Set(res.items.map((i) => i.productId))];
-    // Verrous pris dans un ordre déterministe (produit, id) pour éviter les interblocages.
+    // Verrous pris dans un ordre fixe (produit, id) pour éviter les interblocages.
     const stocks = await m.find(Stock, { where: { productId: In(ids) }, lock: { mode: 'pessimistic_write' }, order: { productId: 'ASC', id: 'ASC' } });
     const { allocations, shortages } = allocate(stocks, res.items);
     if (shortages.length) return { kind: 'insufficient', shortages };
@@ -193,8 +193,8 @@ export class InventoryService implements OnModuleInit {
   }
 
   /**
-   * Seuil critique : max(seuil configuré, sortie moyenne/jour sur 7 j x délai de réappro).
-   * Une alerte StockLow est émise une seule fois par franchissement (ré-armée quand le stock remonte).
+   * Seuil critique : max(seuil configuré, sortie moyenne par jour sur 7 j x délai de réappro).
+   * StockLow n'est émis qu'une fois par franchissement, ré-armé quand le stock remonte.
    */
   private async checkThreshold(m: EntityManager, stock: Stock, pending: Pending[]) {
     const since = new Date(Date.now() - 7 * 86_400_000);
@@ -215,7 +215,7 @@ export class InventoryService implements OnModuleInit {
     }
   }
 
-  // ------------------------------------------------------------------ API
+  // API
 
   async move(dto: MovementDto) {
     const stock = await this.outbox.run(async (m, pending) => {
@@ -278,7 +278,7 @@ export class InventoryService implements OnModuleInit {
     return this.stocks.save(stock);
   }
 
-  /** Disponibilité agrégée (tous entrepôts) - appelée en REST par Order. */
+  /** Disponibilité agrégée, tous entrepôts (appelée en REST par Order). */
   async checkAvailability(items: { productId: string; quantity: number }[]) {
     const merged = mergeItems(items);
     const rows = await this.stocks

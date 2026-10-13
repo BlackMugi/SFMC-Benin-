@@ -3,8 +3,8 @@ import * as jwt from 'jsonwebtoken';
 import { env } from './config';
 
 /**
- * Jetons signés en RS256 : seul auth-service détient la clé privée (JWT_PRIVATE_KEY) et peut signer ;
- * tous les autres services ne vérifient qu'avec la clé publique, publiée au format JWKS (GET /oauth/jwks).
+ * Jetons RS256 : seul auth-service détient la clé privée (JWT_PRIVATE_KEY) et signe.
+ * Les autres services vérifient avec la clé publique, publiée en JWKS (GET /oauth/jwks).
  */
 
 export interface Jwk extends JsonWebKey {
@@ -19,7 +19,7 @@ export interface Jwks {
 
 const ALG = 'RS256';
 
-/** PEM fourni en base64 sur une ligne (variables d'environnement) ou tel quel. */
+/** PEM en base64 sur une ligne (variables d'environnement) ou brut. */
 function pemFromEnv(value: string): string {
   return value.includes('-----BEGIN') ? value : Buffer.from(value, 'base64').toString('utf8');
 }
@@ -63,7 +63,7 @@ export function signAccessToken(claims: Record<string, unknown>, ttlSeconds: num
   return jwt.sign({ ...claims, typ: 'access' }, privateKey, { algorithm: ALG, keyid: kid, issuer: env('JWT_ISSUER', 'sfmc-auth'), expiresIn: ttlSeconds });
 }
 
-/** Clés publiques à publier : clé courante, plus l'ancienne clé pendant une rotation (JWT_PREVIOUS_PUBLIC_KEY). */
+/** Clés publiques à publier : la courante, plus l'ancienne pendant une rotation (JWT_PREVIOUS_PUBLIC_KEY). */
 export function publicJwks(): Jwks {
   const keys = [toJwk(createPublicKey(getSigningKey().privateKey))];
   const previous = process.env.JWT_PREVIOUS_PUBLIC_KEY;
@@ -72,9 +72,8 @@ export function publicJwks(): Jwks {
 }
 
 /**
- * Cache des clés publiques côté vérificateurs. Une clé inconnue (rotation) déclenche un rechargement du JWKS,
- * au plus une fois toutes les 5 s (et une seule requête à la fois) : un jeton forgé avec un kid inventé ne peut pas saturer
- * auth-service, et une nouvelle clé (rotation) est reconnue presque immédiatement.
+ * Cache des clés publiques. Une clé inconnue (rotation) recharge le JWKS, au plus une fois toutes les 5 s
+ * et une requête à la fois, pour qu'un kid inventé ne puisse pas saturer auth-service.
  */
 class KeyStore {
   private keys = new Map<string, KeyObject>();
@@ -82,14 +81,14 @@ class KeyStore {
   private inflight?: Promise<void>;
   private resolver?: () => Promise<Jwks>;
 
-  /** Source du JWKS : locale pour auth-service, HTTP via Consul pour les autres (branchée par CommonModule). */
+  /** Source du JWKS : locale pour auth-service, HTTP via Consul pour les autres. */
   setResolver(resolver: () => Promise<Jwks>) {
     this.resolver = resolver;
   }
 
   async get(kid: string): Promise<KeyObject | undefined> {
     const known = this.keys.get(kid);
-    if (known && Date.now() - this.lastFetch < 600_000) return known; // clés rechargées au moins toutes les 10 min
+    if (known && Date.now() - this.lastFetch < 600_000) return known; // rechargé au moins toutes les 10 min
     if (!known && Date.now() - this.lastFetch < 5_000) return undefined;
     await this.refresh().catch((e) => {
       if (!known) throw e;
@@ -117,7 +116,7 @@ class KeyStore {
     return this.inflight;
   }
 
-  /** Pour les tests : oublie les clés et la date du dernier chargement. */
+  /** Pour les tests : oublie les clés chargées. */
   reset() {
     this.keys.clear();
     this.lastFetch = 0;
@@ -126,10 +125,10 @@ class KeyStore {
 
 export const keyStore = new KeyStore();
 
-/** Erreur distincte : la clé publique n'a pas pu être obtenue (auth-service injoignable) — ce n'est pas un jeton invalide. */
+/** La clé publique n'a pas pu être obtenue (auth-service injoignable). Ce n'est pas un jeton invalide. */
 export class KeysUnavailableError extends Error {}
 
-/** Vérifie signature (RS256 uniquement), émetteur et expiration ; renvoie le contenu du jeton. */
+/** Vérifie signature (RS256 uniquement), émetteur et expiration. */
 export async function verifyJwt(token: string): Promise<jwt.JwtPayload> {
   const decoded = jwt.decode(token, { complete: true });
   if (!decoded || typeof decoded.payload === 'string') throw new Error('jeton illisible');

@@ -5,7 +5,7 @@ const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')
 const ref = { orderId: id(1), customerId: id(2), customerEmail: 'awa@sfmc.bj' };
 const line = { productId: id(3), productName: 'Ciment CPJ 42.5', category: 'cement', quantity: 100, unitPrice: 6500 };
 
-/** Un exemple conforme par événement : sert de référence pour les producteurs et les consommateurs. */
+/** Un exemple conforme par événement. */
 const EXAMPLES: Record<EventType, Record<string, unknown>> = {
   OrderCreated: { ...ref, items: [line], total: 650000, urgency: 5, requiredBy: '2026-11-01T00:00:00.000Z' },
   StockReserved: { orderId: id(1), allocations: [{ productId: id(3), warehouseId: id(4), quantity: 100 }] },

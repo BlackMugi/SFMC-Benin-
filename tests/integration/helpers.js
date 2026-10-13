@@ -1,8 +1,8 @@
-// Utilitaires partagés par le test d'intégration et le script de démo (CommonJS, Node >= 20, sans dépendance).
+// Utilitaires partagés par le test d'intégration et la démo (CommonJS, Node >= 20, sans dépendance).
 const fs = require('node:fs');
 const path = require('node:path');
 
-// Certificat auto-signé en développement : TLS non vérifié UNIQUEMENT pour ces scripts locaux.
+// Certificat auto-signé en dev : TLS non vérifié uniquement pour ces scripts locaux.
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = process.env.NODE_TLS_REJECT_UNAUTHORIZED ?? '0';
 
 function loadEnv() {
@@ -39,7 +39,7 @@ async function api(method, url, { token, body, headers } = {}) {
   return { status: res.status, body: parsed, headers: res.headers };
 }
 
-/** Réessaie `fn` jusqu'à ce qu'elle retourne une valeur truthy (ou timeout). */
+/** Réessaie fn jusqu'à une valeur truthy ou timeout. */
 async function waitFor(fn, { timeout = 60_000, interval = 1000, label = 'condition' } = {}) {
   const start = Date.now();
   for (;;) {
@@ -60,7 +60,7 @@ async function login(email, password) {
   return r.body;
 }
 
-/** Attend que la plateforme réponde : login admin + services enregistrés dans Consul. */
+/** Attend la plateforme : login admin et services enregistrés dans Consul. */
 async function waitForPlatform(timeout = 240_000) {
   await waitFor(async () => (await api('POST', '/api/auth/login', { body: { email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD } })).status === 200, { timeout, interval: 3000, label: 'plateforme prête (login admin)' });
   const admin = await login(env.ADMIN_EMAIL, env.ADMIN_PASSWORD);

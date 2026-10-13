@@ -1,6 +1,6 @@
-// Rejoue le scénario de bout en bout : client → commande → stock insuffisant → production temps réel
-// → ProductionCompleted → stock mis à jour → commande validée → facture → notification → Reporting.
-// Usage : npm run demo   (ou ./demo.sh)  — plateforme démarrée via `docker compose up`.
+// Rejoue le scénario complet : client, commande, stock insuffisant, production, stock mis à jour,
+// commande validée, facture, notification, reporting.
+// Usage : npm run demo (ou ./demo.sh), plateforme démarrée avec `docker compose up`.
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { env, api, waitFor, login, waitForPlatform, openSse, BASE_URL } = require('../tests/integration/helpers.js');

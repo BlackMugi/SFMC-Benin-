@@ -1,6 +1,6 @@
 import { EventEnvelope, OrderValidatedPayload } from '@sfmc/common';
 
-/** Fonctions pures de projection : événement -> lignes des vues de lecture. */
+/** Projections pures : événement vers lignes des vues de lecture. */
 
 export function saleLinesFrom(e: EventEnvelope<OrderValidatedPayload>) {
   const day = e.occurredAt.slice(0, 10);
@@ -15,8 +15,8 @@ export function saleLinesFrom(e: EventEnvelope<OrderValidatedPayload>) {
 }
 
 /**
- * Met à jour un instantané de stock. Le drapeau "low" est levé par StockLow et baissé quand
- * une entrée de stock ramène le disponible au-dessus du seuil mémorisé.
+ * Met à jour un instantané de stock. "low" est levé par StockLow et baissé quand une entrée de stock
+ * remet le disponible au-dessus du seuil mémorisé.
  */
 export function applyStockUpdated(
   prev: { low: boolean; lowThreshold: number | null } | undefined,

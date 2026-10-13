@@ -1,6 +1,6 @@
 // Test de résilience de l'outbox : provoque de vraies pannes sur la plateforme de développement.
-// ATTENTION : arrête RabbitMQ et tue order-service pendant le test (ils sont redémarrés à la fin).
-// Lancement : docker compose up -d   puis   npm run test:resilience
+// ATTENTION : arrête RabbitMQ et tue order-service pendant le test (redémarrés à la fin).
+// Lancement : docker compose up -d puis npm run test:resilience
 const { execSync } = require('node:child_process');
 const path = require('node:path');
 const { api, env, login, waitFor, waitForPlatform } = require('../integration/helpers.js');

@@ -51,8 +51,8 @@ export class HealthController {
     if (this.options.consul !== false) {
       checks.consul = (await this.moduleRef.get(ConsulService, { strict: false }).ping()) ? 'up' : 'down';
     }
-    // Seule la base est bloquante. Broker absent : le service reste disponible (les événements attendent dans
-    // l'outbox et partiront à son retour) mais est signalé « degraded ». Consul est surveillé, non bloquant.
+    // Seule la base est bloquante. Sans broker le service reste disponible (les événements attendent dans
+    // l'outbox) mais passe en « degraded ». Consul est surveillé sans bloquer.
     if (checks.database === 'down') res.status(503);
     const status = checks.database === 'down' ? 'down' : Object.values(checks).includes('down') ? 'degraded' : 'ok';
     return { status, service: this.options.serviceName, uptime: Math.round(process.uptime()), checks, ...(outboxPending !== undefined ? { outboxPending } : {}) };

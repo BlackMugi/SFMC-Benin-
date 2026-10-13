@@ -19,9 +19,9 @@ export class CommonModule implements OnModuleInit {
     private readonly consul: ConsulService,
   ) {}
 
-  /** Ouvre la connexion au broker au démarrage (sans bloquer si le service n'utilise pas d'événements). */
+  /** Ouvre la connexion au broker au démarrage. */
   async onModuleInit() {
-    // Clés publiques de vérification des jetons : chez auth-service (via Consul), sauf pour auth-service lui-même
+    // Clés publiques : récupérées chez auth-service via Consul (sauf pour auth-service lui-même)
     if (!hasSigningKey()) {
       keyStore.setResolver(async () => {
         const base = await this.consul.resolve('auth-service');

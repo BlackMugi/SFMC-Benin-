@@ -1,6 +1,6 @@
-// Tests de sécurité (OWASP) exécutés contre la plateforme réelle : HTTPS via la gateway, et appels directs aux
-// services pour vérifier la défense en profondeur. Lancement : docker compose up -d   puis   npm run test:security
-// Le dernier test épuise volontairement la limite de tentatives de connexion (1 minute de blocage pour cette IP).
+// Tests de sécurité (OWASP) contre la plateforme réelle : HTTPS via la gateway et appels directs aux
+// services. Lancement : docker compose up -d puis npm run test:security
+// Le dernier test épuise la limite de tentatives de connexion (1 minute de blocage pour cette IP).
 const crypto = require('node:crypto');
 const { api, env, login, waitForPlatform } = require('../integration/helpers.js');
 

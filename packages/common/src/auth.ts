@@ -22,12 +22,12 @@ export interface AuthUser {
 export const IS_PUBLIC = 'isPublic';
 export const ROLES_KEY = 'roles';
 export const Public = () => SetMetadata(IS_PUBLIC, true);
-/** RBAC : sans @Roles, tout utilisateur authentifié passe. */
+/** Sans @Roles, tout utilisateur authentifié passe. */
 export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
 
 export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext): AuthUser => ctx.switchToHttp().getRequest().user);
 
-/** Vérifie un jeton d'accès RS256 avec la clé publique d'auth-service (JWKS). */
+/** Vérifie un jeton RS256 avec la clé publique d'auth-service. */
 export async function verifyAccessToken(token: string): Promise<AuthUser> {
   const payload = await verifyJwt(token);
   if (payload.typ !== 'access') throw new Error('type de jeton invalide');
@@ -44,7 +44,7 @@ export function extractBearer(header?: string): string | undefined {
   return m?.[1];
 }
 
-/** Guard global : vérifie le JWT (défense en profondeur, la Gateway l'a déjà vérifié) puis le rôle. */
+/** Guard global : vérifie le JWT puis le rôle. */
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}

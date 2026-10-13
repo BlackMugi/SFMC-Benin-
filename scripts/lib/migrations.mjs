@@ -1,4 +1,4 @@
-// Outils communs aux scripts de migration : base PostgreSQL jetable (Docker) et chargement des entités compilées d'un service.
+// Outils pour les scripts de migration : PostgreSQL jetable (Docker) et chargement des entités compilées.
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -14,8 +14,8 @@ const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8' }).t
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Démarre un PostgreSQL jetable, appelle fn(connect) puis supprime le conteneur.
- * connect(dbName) crée la base (si besoin) et renvoie les options de connexion TypeORM.
+ * Démarre un PostgreSQL jetable, appelle fn(connect), puis supprime le conteneur.
+ * connect(dbName) crée la base si besoin et renvoie les options de connexion TypeORM.
  */
 export async function withTempPostgres(fn) {
   const name = `sfmc-migrations-${randomBytes(4).toString('hex')}`;

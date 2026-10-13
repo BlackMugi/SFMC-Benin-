@@ -7,7 +7,7 @@ export abstract class ServiceTokenProvider {
   abstract getToken(): Promise<string>;
 }
 
-/** OAuth2 client credentials : obtient un jeton de service auprès de auth-service (résolu via Consul). */
+/** OAuth2 client credentials : jeton de service obtenu auprès d'auth-service (via Consul). */
 @Injectable()
 export class OAuthTokenProvider extends ServiceTokenProvider {
   private readonly log = new Logger('ServiceToken');
@@ -42,7 +42,7 @@ export interface RequestOptions {
   timeoutMs?: number;
 }
 
-/** Client REST inter-services : découverte Consul, jeton de service, correlation-id, timeout. */
+/** Client REST inter-services : Consul, jeton de service, correlation-id, timeout. */
 @Injectable()
 export class ServiceClient {
   constructor(private readonly consul: ConsulService, @Inject(ServiceTokenProvider) private readonly tokens: ServiceTokenProvider) {}

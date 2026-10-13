@@ -10,7 +10,7 @@ export class OAuthService implements OnModuleInit {
 
   constructor(@InjectRepository(OAuthClient) private readonly repo: Repository<OAuthClient>, private readonly tokens: TokensService) {}
 
-  /** Clients pré-enregistrés depuis l'environnement (aucun secret en dur). */
+  /** Clients pré-enregistrés depuis l'environnement. */
   async onModuleInit() {
     await this.seed('order-service', 'Order Service', 'service', process.env.ORDER_CLIENT_SECRET, ['internal']);
     await this.seed('partner-demo', 'Partenaire de démonstration', 'partner', process.env.PARTNER_DEMO_CLIENT_SECRET, ['catalog:read']);
@@ -33,7 +33,7 @@ export class OAuthService implements OnModuleInit {
     const client = await this.repo.findOne({ where: { clientId } });
     const ok = !!client && client.active && this.tokens.safeEqual(client.secretHash, this.tokens.hash(clientSecret));
     if (!ok) throw new UnauthorizedException('invalid_client');
-    // Le scope demandé est restreint aux scopes accordés au client.
+    // Scope limité à ceux accordés au client.
     const requested = requestedScope?.split(' ').filter(Boolean) ?? client.scopes;
     const scopes = requested.filter((s) => client.scopes.includes(s));
     const ttl = this.tokens.accessTtl;
@@ -59,7 +59,7 @@ export class OAuthService implements OnModuleInit {
     const clientId = `ext-${this.tokens.randomToken(9)}`;
     const clientSecret = this.tokens.randomToken(32);
     const c = await this.repo.save(this.repo.create({ clientId, name, role: 'partner', scopes, secretHash: this.tokens.hash(clientSecret) }));
-    // Le secret n'est renvoyé qu'une seule fois.
+    // Le secret n'est renvoyé qu'une fois.
     return { id: c.id, clientId, clientSecret, name, role: c.role, scopes: c.scopes };
   }
 

@@ -7,7 +7,7 @@ import { CreateUserDto, RegisterDto, UpdateUserDto } from './user.dto';
 import { User } from './user.entity';
 
 const BCRYPT_ROUNDS = 10;
-// hash factice : comparaison à temps constant même si l'utilisateur n'existe pas
+// faux hash : comparaison à temps constant même si l'utilisateur n'existe pas
 const DUMMY_HASH = bcrypt.hashSync('dummy-password', BCRYPT_ROUNDS);
 
 @Injectable()
@@ -38,7 +38,7 @@ export class UsersService implements OnModuleInit {
     return this.strip(await this.repo.save(user));
   }
 
-  /** Inscription publique : le rôle est toujours "client" (pas d'élévation de privilège possible). */
+  /** Inscription publique : le rôle est toujours client. */
   register(dto: RegisterDto) {
     return this.create({ ...dto, role: Role.Client });
   }

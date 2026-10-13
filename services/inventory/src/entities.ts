@@ -36,15 +36,15 @@ export class Stock {
   @Column({ type: 'int', default: 0 })
   quantity: number;
 
-  /** Quantité réservée pour des commandes (disponible = quantity - reserved) */
+  /** Quantité réservée (disponible = quantity - reserved) */
   @Column({ type: 'int', default: 0 })
   reserved: number;
 
-  /** Seuil critique minimal configurable ; le seuil effectif peut être plus élevé (voir threshold.ts) */
+  /** Seuil minimal configuré ; le seuil effectif peut être plus haut (voir allocation.ts) */
   @Column({ name: 'min_threshold', type: 'int', default: 10 })
   minThreshold: number;
 
-  /** Alerte déjà émise (évite le spam tant que le stock n'est pas reconstitué) */
+  /** Alerte déjà émise, évite les doublons tant que le stock n'est pas reconstitué */
   @Column({ name: 'alert_active', default: false })
   alertActive: boolean;
 }

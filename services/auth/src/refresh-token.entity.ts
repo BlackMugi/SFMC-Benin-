@@ -9,12 +9,12 @@ export class RefreshToken {
   @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
-  /** SHA-256 du jeton opaque : le jeton en clair n'est jamais stocké. */
+  /** SHA-256 du jeton : le jeton en clair n'est jamais stocké. */
   @Index({ unique: true })
   @Column({ name: 'token_hash' })
   tokenHash: string;
 
-  /** Famille de rotation : si un jeton déjà utilisé est rejoué, toute la famille est révoquée. */
+  /** Famille de rotation : un jeton déjà utilisé rejoué révoque toute la famille. */
   @Index()
   @Column({ name: 'family_id', type: 'uuid' })
   familyId: string;

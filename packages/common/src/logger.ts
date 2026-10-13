@@ -4,7 +4,7 @@ import { getCorrelationId } from './context';
 const LEVELS = ['debug', 'log', 'warn', 'error'] as const;
 type Level = (typeof LEVELS)[number];
 
-/** Logger JSON structuré (une ligne par entrée) avec correlation-id issu du contexte asynchrone. */
+/** Logger JSON, une ligne par entrée, avec correlation-id. */
 export class JsonLogger implements LoggerService {
   private readonly min: number;
 

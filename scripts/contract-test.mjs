@@ -1,9 +1,7 @@
 // Tests de contrat entre services.
-//  1. Catalogue : qui publie / qui consomme chaque événement est lu dans le code des services, puis comparé au
-//     catalogue documenté (docs/01-architecture.md). Tout écart fait échouer le test : la documentation ne peut pas
-//     dériver du code. Vérifie aussi qu'aucun événement consommé n'est orphelin (sans producteur) et inversement.
-//  2. --live : tous les événements réellement enregistrés dans les outbox de la plateforme démarrée sont validés
-//     contre leur contrat (données produites par la démo, les tests, l'usage).
+//  1. Catalogue : producteurs et consommateurs de chaque événement lus dans le code, comparés à docs/01-architecture.md.
+//     Tout écart fait échouer le test, de même qu'un événement sans producteur ou sans consommateur.
+//  2. --live : les événements des outbox de la plateforme démarrée sont validés contre leur contrat.
 // Usage : npm run build && npm run test:contracts [-- --live]
 import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -25,7 +23,7 @@ const check = (label, ok, detail = '') => {
 const eq = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 const fmt = (s) => [...s].sort().join(', ') || '(aucun)';
 
-// ---------------------------------------------------------------- 1. Catalogue réel (lu dans le code)
+// Catalogue lu dans le code
 const produced = Object.fromEntries(ALL.map((e) => [e, new Set()]));
 const consumed = Object.fromEntries(ALL.map((e) => [e, new Set()]));
 for (const [dir, name] of Object.entries(SERVICES)) {
@@ -44,12 +42,12 @@ for (const [dir, name] of Object.entries(SERVICES)) {
       for (const [, e] of list.matchAll(/'(\w+)'/g)) consumed[e].add(name);
     }
   }
-  // Production : toute autre référence EVENTS.X (les publications passent toutes par l'outbox avec type: EVENTS.X)
+  // Production : toute autre référence EVENTS.X (les publications passent par l'outbox)
   const withoutSubscriptions = subscribeCalls.reduce((c, call) => c.replace(call, ''), code);
   for (const [, e] of withoutSubscriptions.matchAll(/EVENTS\.(\w+)/g)) produced[e].add(name);
 }
 
-// ---------------------------------------------------------------- Catalogue documenté
+// Catalogue documenté
 const doc = readFileSync(join(root, 'docs/01-architecture.md'), 'utf8').replace(/\r\n/g, '\n');
 const table = /## Catalogue d'événements\n\n((?:\|.*(?:\n|$))+)/.exec(doc)?.[1].trim() ?? '';
 const documented = {};
@@ -73,7 +71,7 @@ for (const e of ALL) {
 }
 for (const e of Object.keys(documented)) if (!ALL.includes(e)) check(`${e} : documenté mais inexistant dans le code`, false);
 
-// ---------------------------------------------------------------- 2. Événements réels (--live)
+// Événements réels (--live)
 if (process.argv.includes('--live')) {
   const counts = {};
   for (const db of ['order', 'inventory', 'production', 'billing']) {

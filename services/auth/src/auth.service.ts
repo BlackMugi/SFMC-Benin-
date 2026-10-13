@@ -21,7 +21,7 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    // REST interne vers user-service (identifiants vérifiés par le domaine "Utilisateurs")
+    // REST interne vers user-service (vérification des identifiants)
     const user = await this.services
       .post<UserIdentity>('user-service', '/users/internal/verify', { email, password })
       .catch((e) => {
@@ -35,7 +35,7 @@ export class AuthService {
     const stored = await this.refreshRepo.findOne({ where: { tokenHash: this.tokens.hash(refreshToken) } });
     if (!stored) throw new UnauthorizedException('Jeton de rafraîchissement invalide');
     if (stored.revokedAt) {
-      // Réutilisation d'un jeton déjà consommé : compromission probable -> toute la famille est révoquée.
+      // Jeton déjà consommé réutilisé : compromission probable, toute la famille est révoquée.
       await this.revokeFamily(stored.familyId);
       throw new UnauthorizedException('Jeton de rafraîchissement réutilisé');
     }

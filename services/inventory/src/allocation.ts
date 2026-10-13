@@ -22,8 +22,8 @@ export interface Shortage {
 export const available = (s: Pick<StockLike, 'quantity' | 'reserved'>) => s.quantity - s.reserved;
 
 /**
- * Répartit une demande multi-produits sur les entrepôts (le plus approvisionné d'abord, pour limiter
- * le nombre d'entrepôts sollicités). Tout ou rien : s'il manque quoi que ce soit, aucune allocation.
+ * Répartit une demande multi-produits sur les entrepôts, le plus approvisionné d'abord pour limiter
+ * leur nombre. Tout ou rien : s'il manque quoi que ce soit, aucune allocation.
  */
 export function allocate(stocks: StockLike[], items: { productId: string; quantity: number }[]): { allocations: Allocation[]; shortages: Shortage[] } {
   const allocations: Allocation[] = [];
@@ -47,8 +47,7 @@ export function allocate(stocks: StockLike[], items: { productId: string; quanti
 }
 
 /**
- * Seuil critique dynamique : max(seuil configuré, consommation moyenne journalière x délai de réapprovisionnement).
- * Plus un produit se vend vite, plus le seuil d'alerte monte.
+ * Seuil critique dynamique : max(seuil configuré, consommation moyenne par jour x délai de réapprovisionnement).
  */
 export function criticalThreshold(minThreshold: number, avgDailyOut: number, leadTimeDays: number): number {
   return Math.max(minThreshold, Math.ceil(avgDailyOut * leadTimeDays));

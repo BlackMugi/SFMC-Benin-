@@ -14,7 +14,7 @@ function setup(over: { product?: any; availability?: any } = {}) {
     findOne: jest.fn(async ({ where }: any) => rows.get(where.id) ?? null),
     findOneOrFail: jest.fn(async ({ where }: any) => rows.get(where.id)),
     find: jest.fn(async () => [...rows.values()]),
-    // compare-and-set : applique le patch seulement si les conditions (status/phase) sont vraies
+    // compare-and-set : applique le patch si les conditions status/phase sont vraies
     update: jest.fn(async (cond: any, patch: any) => {
       const row = rows.get(cond.id);
       if (!row) return { affected: 0 };
@@ -29,7 +29,7 @@ function setup(over: { product?: any; availability?: any } = {}) {
   };
   const history: any = { create: (v: any) => v, save: jest.fn(async (v: any) => v) };
   const bus: any = {};
-  // EntityManager de transaction : délègue aux faux dépôts (Order) ; l'historique est accepté tel quel
+  // EntityManager de transaction délégant aux faux dépôts
   const manager: any = {
     create: (entity: any, v: any) => (entity.name === 'Order' ? orders.create(v) : history.create(v)),
     save: (v: any) => ('customerId' in v ? orders.save(v) : history.save(v)),
@@ -37,7 +37,7 @@ function setup(over: { product?: any; availability?: any } = {}) {
     findOneOrFail: (_e: any, opts: any) => orders.findOneOrFail(opts),
     update: (_e: any, cond: any, patch: any) => orders.update(cond, patch),
   };
-  // Outbox : les événements ne sont « publiés » que si la transaction réussit (comme en vrai)
+  // Outbox : événements publiés seulement si la transaction réussit
   const outbox: any = {
     run: jest.fn(async (fn: any) => {
       const events: { type: string; payload: any }[] = [];

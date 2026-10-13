@@ -60,7 +60,7 @@ describe('JWT RS256 + JWKS', () => {
   it('publie la clé courante et la clé précédente (rotation) dans le JWKS', () => {
     const { keys } = publicJwks();
     expect(keys.map((k) => k.kid)).toEqual([kidOf(current.publicKey), kidOf(previous.publicKey)]);
-    expect(keys.every((k) => k.alg === 'RS256' && k.use === 'sig' && !('d' in k))).toBe(true); // aucune partie privée publiée
+    expect(keys.every((k) => k.alg === 'RS256' && k.use === 'sig' && !('d' in k))).toBe(true); // pas de partie privée
   });
 
   it('extrait le Bearer et vérifie un access token RS256 valide', async () => {

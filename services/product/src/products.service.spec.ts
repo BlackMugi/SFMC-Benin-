@@ -44,6 +44,6 @@ describe('CreateProductDto', () => {
     const dto = plainToInstance(CreateProductDto, { sku: 'X-1', name: '<script>alert(1)</script>Brique', category: 'wood', unitPrice: -5 });
     const errors = await validate(dto);
     expect(errors.map((e) => e.property).sort()).toEqual(['category', 'unitPrice']);
-    expect(dto.name).toBe('Brique'); // contenu du <script> retiré en entier
+    expect(dto.name).toBe('Brique'); // contenu du <script> retiré
   });
 });

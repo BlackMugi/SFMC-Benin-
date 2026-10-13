@@ -28,7 +28,7 @@ function setup() {
   };
   const ds: any = { query: jest.fn(async (q: string) => (q.includes('nextval') ? [{ nextval: '7' }] : [])) };
   const bus: any = {};
-  // EntityManager de transaction : délègue au faux dépôt
+  // EntityManager de transaction délégant au faux dépôt
   const manager: any = {
     query: ds.query,
     create: (_e: any, v: any) => repo.create(v),
@@ -36,7 +36,7 @@ function setup() {
     update: (_e: any, cond: any, patch: any) => repo.update(cond, patch),
     findOneOrFail: (_e: any, opts: any) => repo.findOneOrFail(opts),
   };
-  // Outbox : les événements ne sont « publiés » que si la transaction réussit
+  // Outbox : événements publiés seulement si la transaction réussit
   const outbox: any = {
     run: jest.fn(async (fn: any) => {
       const events: { type: string; payload: any }[] = [];

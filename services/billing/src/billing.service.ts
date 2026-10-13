@@ -41,7 +41,7 @@ export class BillingService implements OnModuleInit {
     const totals = computeTotals(lines, envFloat('TAX_RATE', 0.18));
     let invoice: Invoice;
     try {
-      // Facture et InvoiceIssued dans la même transaction (outbox)
+      // Facture et InvoiceIssued dans la même transaction
       invoice = await this.outbox.run(async (m, events) => {
         const [{ nextval }] = await m.query("SELECT nextval('invoice_number_seq') AS nextval");
         const number = `INV-${new Date().getFullYear()}-${String(nextval).padStart(6, '0')}`;
@@ -52,7 +52,7 @@ export class BillingService implements OnModuleInit {
         return inv;
       });
     } catch (err) {
-      if ((err as { code?: string }).code === '23505') return null; // doublon concurrent : déjà facturée (transaction annulée)
+      if ((err as { code?: string }).code === '23505') return null; // doublon concurrent : déjà facturée
       throw err;
     }
     this.log.log(`Facture ${invoice.number} émise pour la commande ${p.orderId} (${invoice.amount} ${invoice.currency})`);
@@ -90,7 +90,7 @@ export class BillingService implements OnModuleInit {
     if (inv.status === 'PAID') throw new ConflictException('Facture déjà payée');
     if (inv.status === 'CANCELLED') throw new BadRequestException('Facture annulée');
     const { reference } = await this.payments.charge({ invoiceId: inv.id, amount: inv.amount, currency: inv.currency, method });
-    // compare-and-set : un seul paiement gagnant en cas de double appel concurrent
+    // compare-and-set : un seul paiement gagne en cas d'appel concurrent
     return this.outbox.run(async (m, events) => {
       const res = await m.update(Invoice, { id, status: 'ISSUED' }, { status: 'PAID', paymentMethod: method, paymentReference: reference, paidAt: new Date() });
       if (!res.affected) throw new ConflictException('Facture déjà traitée');

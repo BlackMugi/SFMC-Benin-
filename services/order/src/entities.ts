@@ -37,7 +37,7 @@ export class Order {
   @Column({ name: 'required_by', type: 'timestamptz', nullable: true })
   requiredBy: Date | null;
 
-  /** Résultat de la vérification REST synchrone auprès d'Inventory (informatif) */
+  /** Résultat de la vérification REST auprès d'Inventory (indicatif) */
   @Column({ name: 'stock_check', type: 'jsonb', nullable: true })
   stockCheck: unknown;
 

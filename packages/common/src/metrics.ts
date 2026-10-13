@@ -30,7 +30,7 @@ export class MetricsService {
       if (req.path === '/metrics') return next();
       const end = this.httpDuration.startTimer();
       res.on('finish', () => {
-        // Route normalisée (le motif Express, pas l'URL brute) : évite l'explosion de cardinalité.
+        // Route normalisée (motif Express, pas l'URL brute) pour limiter la cardinalité.
         const pattern = req.route?.path as string | undefined;
         const route = pattern ? (req.baseUrl || '') + pattern : 'unmatched';
         end({ method: req.method, route, status: String(res.statusCode) });

@@ -48,14 +48,14 @@ export class OrdersService implements OnModuleInit {
     );
   }
 
-  // ------------------------------------------------------------------ API
+  // API
 
   async create(user: AuthUser, dto: CreateOrderDto): Promise<Order> {
-    // Fusion des lignes d'un même produit
+    // Lignes d'un même produit fusionnées
     const wanted = new Map<string, number>();
     for (const i of dto.items) wanted.set(i.productId, (wanted.get(i.productId) ?? 0) + i.quantity);
 
-    // REST synchrone vers Product : existence + prix au moment de la commande
+    // REST vers Product : existence et prix au moment de la commande
     const items: OrderLine[] = [];
     for (const [productId, quantity] of wanted) {
       const p = await this.services.get<ProductDto>('product-service', `/products/${productId}`).catch((e) => {
@@ -66,7 +66,7 @@ export class OrdersService implements OnModuleInit {
       items.push({ productId, productName: p.name, category: p.category, quantity, unitPrice: p.unitPrice });
     }
 
-    // REST synchrone vers Inventory : vérification immédiate (indicative, la réservation fait foi)
+    // REST vers Inventory : vérification indicative, la réservation fait foi
     let stockCheck: unknown = null;
     try {
       stockCheck = await this.services.post('inventory-service', '/inventory/availability', { items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })) });
@@ -75,8 +75,8 @@ export class OrdersService implements OnModuleInit {
     }
 
     const total = Math.round(items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0) * 100) / 100;
-    // Commande, historique et OrderCreated écrits dans la même transaction (outbox) : la saga démarre forcément,
-    // même si RabbitMQ est momentanément indisponible.
+    // Commande, historique et OrderCreated dans la même transaction (outbox) : la saga démarre
+    // même si RabbitMQ est indisponible.
     return this.outbox.run(async (m, events) => {
       const order = await m.save(
         m.create(Order, {
@@ -143,7 +143,7 @@ export class OrdersService implements OnModuleInit {
     });
   }
 
-  // ------------------------------------------------------------------ Saga (chorégraphie)
+  // Saga (chorégraphie)
 
   async handleEvent(e: DomainEvent): Promise<void> {
     switch (e.type) {
@@ -160,13 +160,13 @@ export class OrdersService implements OnModuleInit {
     }
   }
 
-  /** Stock réservé -> commande validée (fin heureuse de la saga). */
+  /** Stock réservé : commande validée. */
   async onStockReserved(orderId: string) {
     await this.outbox.run(async (m, events) => {
       const order = await m.findOne(Order, { where: { id: orderId } });
       if (!order) return;
       if (order.status === 'cancelled' || order.status === 'rejected') {
-        // Compensation tardive : la réservation est arrivée après l'annulation -> on redemande la libération (idempotente).
+        // Réservation arrivée après l'annulation : on redemande la libération (idempotente).
         const type = order.status === 'cancelled' ? EVENTS.OrderCancelled : EVENTS.OrderRejected;
         events.push({ type, payload: { ...this.ref(order), reason: order.rejectionReason ?? 'Commande clôturée' } });
         return;
@@ -178,7 +178,7 @@ export class OrdersService implements OnModuleInit {
     });
   }
 
-  /** Stock insuffisant -> déclenche la production des quantités manquantes. */
+  /** Stock insuffisant : déclenche la production des quantités manquantes. */
   async onStockInsufficient(p: StockInsufficientPayload) {
     await this.outbox.run(async (m, events) => {
       const order = await m.findOne(Order, { where: { id: p.orderId } });
@@ -214,7 +214,7 @@ export class OrdersService implements OnModuleInit {
     });
   }
 
-  /** Échec de production -> la commande est rejetée ; Inventory libère la réservation (compensation). */
+  /** Échec de production : commande rejetée, Inventory libère la réservation. */
   async onProductionFailed(p: ProductionFailedPayload) {
     if (!p.orderId) return;
     const reason = `Production impossible : ${p.reason}`;
@@ -234,9 +234,9 @@ export class OrdersService implements OnModuleInit {
     });
   }
 
-  // ------------------------------------------------------------------ Helpers
+  // Helpers
 
-  /** Transition atomique (compare-and-set sur le statut source) : sûre en cas de rejeu ou de concurrence. */
+  /** Transition atomique (compare-and-set sur le statut source), sûre en cas de rejeu ou de concurrence. */
   private async transition(m: EntityManager, id: string, to: OrderStatus, patch: { phase: OrderPhase; rejectionReason?: string }): Promise<boolean> {
     const res = await m.update(Order, { id, status: In(sourcesFor(to)) }, { status: to, ...patch });
     return !!res.affected;

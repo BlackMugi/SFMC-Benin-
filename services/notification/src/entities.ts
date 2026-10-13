@@ -6,7 +6,7 @@ export class Notification {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  /** id de l'événement source : garantit une seule notification par (événement, destinataire) */
+  /** id de l'événement source : une seule notification par (événement, destinataire) */
   @Column({ name: 'event_id' })
   eventId: string;
 
@@ -37,7 +37,7 @@ export class Notification {
   createdAt: Date;
 }
 
-/** Projection locale (alimentée par OrderCreated) : retrouver l'email du client à partir d'un orderId. */
+/** Projection locale alimentée par OrderCreated : retrouve l'email du client depuis un orderId. */
 @Entity('order_contacts')
 export class OrderContact {
   @PrimaryColumn({ name: 'order_id', type: 'uuid' })

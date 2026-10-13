@@ -1,6 +1,6 @@
 import { OrderStatus } from './entities';
 
-/** Machine à états du cycle de vie : pending → validated → shipped (+ rejected / cancelled). */
+/** Cycle de vie : pending, validated, shipped (+ rejected / cancelled). */
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   pending: ['validated', 'rejected', 'cancelled'],
   validated: ['shipped', 'cancelled'],

@@ -48,7 +48,7 @@ export class ProductsService implements OnModuleInit {
     return this.repo.save(p);
   }
 
-  /** Suppression logique : les commandes et factures historiques référencent encore le produit. */
+  /** Suppression logique : commandes et factures historiques référencent encore le produit. */
   async remove(id: string): Promise<void> {
     const p = await this.findOne(id);
     p.active = false;

@@ -1,7 +1,6 @@
 // Génère .env depuis .env.example en remplaçant chaque CHANGE_ME par un secret aléatoire
-// (CHANGE_ME_RSA : clé privée RSA 2048 de signature des jetons, PEM encodé en base64 sur une ligne).
-// Si .env existe déjà : seules les variables absentes sont ajoutées, les valeurs existantes ne sont jamais modifiées
-// (les mots de passe des bases déjà créées doivent rester identiques). --force régénère tout le fichier.
+// (CHANGE_ME_RSA : clé privée RSA 2048 en PEM, base64 sur une ligne).
+// Si .env existe, seules les variables absentes sont ajoutées. --force régénère tout.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +15,7 @@ function secretFor(key, placeholder) {
     const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
     return Buffer.from(privateKey.export({ type: 'pkcs8', format: 'pem' })).toString('base64');
   }
-  // Mots de passe alphanumériques (compatibles URL AMQP / Postgres)
+  // Alphanumériques, compatibles avec les URL AMQP et Postgres
   return randomBytes(18).toString('base64url').replace(/[-_]/g, 'x');
 }
 

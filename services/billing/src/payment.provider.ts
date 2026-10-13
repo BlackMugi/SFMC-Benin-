@@ -12,7 +12,7 @@ export interface ChargeResult {
   reference: string;
 }
 
-/** Contrat d'un fournisseur de paiement (Mobile Money, carte, ...). Implémenter et brancher via le token PAYMENT_PROVIDER. */
+/** Fournisseur de paiement (Mobile Money, carte...). À brancher via le token PAYMENT_PROVIDER. */
 export abstract class PaymentProvider {
   abstract charge(req: ChargeRequest): Promise<ChargeResult>;
 }

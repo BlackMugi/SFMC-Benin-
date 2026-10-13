@@ -22,11 +22,11 @@ export class ReportingService implements OnModuleInit {
     await this.bus.subscribe('reporting.projections', Object.keys(EVENTS) as EventType[], (e) => this.project(e));
   }
 
-  // ------------------------------------------------------------------ Projections (événement -> vue de lecture)
+  // Projections (événement vers vue de lecture)
 
   async project(e: DomainEvent): Promise<void> {
     await this.ds.transaction(async (m) => {
-      // Journal : l'unicité de eventId rend toute la projection idempotente (rejeu = rien ne se passe).
+      // Journal : l'unicité de eventId rend la projection idempotente.
       if (await m.exists(EventLog, { where: { eventId: e.id } })) return;
       await m.insert(EventLog, { eventId: e.id, orderId: orderIdOf(e), type: e.type, source: e.source, payload: e.payload, correlationId: e.correlationId, at: new Date(e.occurredAt) });
 
@@ -55,7 +55,7 @@ export class ReportingService implements OnModuleInit {
     });
   }
 
-  // ------------------------------------------------------------------ Vues de lecture
+  // Vues de lecture
 
   async salesReport(from?: string, to?: string) {
     const range = (qb: ReturnType<Repository<SaleLine>['createQueryBuilder']>) => {

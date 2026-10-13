@@ -3,13 +3,13 @@ import { TypeOrmModuleAsyncOptions } from '@nestjs/typeorm';
 import { DataSource, DataSourceOptions, MixedList } from 'typeorm';
 import { env, envBool, envInt } from './config';
 
-/** Verrou PostgreSQL pris pendant l'application des migrations : deux répliques qui démarrent ensemble ne migrent pas en parallèle. */
+/** Verrou PostgreSQL pendant les migrations : deux répliques ne migrent pas en parallèle. */
 const MIGRATION_LOCK_ID = 726_354_001;
 const MIGRATIONS_TABLE = 'migrations';
 
 type MigrationList = MixedList<string | (new () => unknown)>;
 
-/** Options de connexion : une base par service (variables DB_*). Requêtes toujours paramétrées par l'ORM. */
+/** Options de connexion, une base par service (variables DB_*). */
 export function dataSourceOptions(migrations: MigrationList = []): DataSourceOptions {
   return {
     type: 'postgres',
@@ -18,7 +18,7 @@ export function dataSourceOptions(migrations: MigrationList = []): DataSourceOpt
     database: env('DB_NAME'),
     username: env('DB_USER'),
     password: env('DB_PASSWORD'),
-    // Le schéma est géré par les migrations versionnées (src/migrations). DB_SYNC=true reste possible en développement local uniquement.
+    // Schéma géré par les migrations (src/migrations). DB_SYNC=true réservé au développement local.
     synchronize: envBool('DB_SYNC', false),
     migrations,
     migrationsTableName: MIGRATIONS_TABLE,
@@ -26,10 +26,7 @@ export function dataSourceOptions(migrations: MigrationList = []): DataSourceOpt
   };
 }
 
-/**
- * Configuration TypeORM du service : connexion, puis application des migrations en attente avant que le service
- * accepte des requêtes. Les entités sont chargées automatiquement depuis les TypeOrmModule.forFeature().
- */
+/** Configuration TypeORM : connexion, puis migrations en attente avant d'accepter des requêtes. */
 export function typeOrmConfig(migrations: MigrationList = []): TypeOrmModuleAsyncOptions {
   return {
     useFactory: () => ({ ...dataSourceOptions(migrations), autoLoadEntities: true, retryAttempts: 20, retryDelay: 3000 }),
@@ -42,9 +39,9 @@ export function typeOrmConfig(migrations: MigrationList = []): TypeOrmModuleAsyn
 }
 
 /**
- * Applique les migrations en attente sous verrou consultatif PostgreSQL.
- * Base créée avant les migrations (ancien mode synchronize) : si les tables du service existent déjà et qu'aucune
- * migration n'est enregistrée, la migration initiale est marquée comme appliquée (baseline), sans toucher aux données.
+ * Applique les migrations en attente sous verrou PostgreSQL.
+ * Si la base a été créée par synchronize (tables présentes, aucune migration enregistrée), la migration
+ * initiale est marquée comme appliquée sans toucher aux données.
  */
 export async function runMigrations(ds: DataSource): Promise<void> {
   const log = new Logger('Migrations');
@@ -66,7 +63,7 @@ async function baselineLegacySchema(ds: DataSource, log: Logger) {
   if (!initial) return;
   const [{ exists: hasMigrationsTable }] = await ds.query(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`public.${MIGRATIONS_TABLE}`]);
   if (hasMigrationsTable) return;
-  // Tables antérieures aux migrations (l'outbox et la déduplication sont arrivées ensuite, par migration)
+  // Tables d'avant les migrations (outbox et déduplication sont venues après)
   const later = new Set(['outbox', 'processed_events']);
   const tables = ds.entityMetadatas.filter((m) => m.tableType === 'regular' && !later.has(m.tableName)).map((m) => m.tableName);
   if (!tables.length) return;
@@ -80,7 +77,7 @@ async function baselineLegacySchema(ds: DataSource, log: Logger) {
   log.warn(`Base existante sans historique de migrations : ${name} marquée comme appliquée (baseline)`);
 }
 
-/** Les colonnes NUMERIC de PostgreSQL arrivent en string : conversion en number. */
+/** NUMERIC arrive en string depuis PostgreSQL : conversion en number. */
 export const numericTransformer = {
   to: (v?: number | null) => v,
   from: (v?: string | null) => (v === null || v === undefined ? v : parseFloat(v)),

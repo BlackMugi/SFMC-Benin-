@@ -7,8 +7,8 @@ export interface OutgoingMessage {
 }
 
 /**
- * Contrat d'un fournisseur de notification. Pour brancher un vrai fournisseur (SMTP, SendGrid, SMS...),
- * implémenter `send` puis l'enregistrer dans `createProvider` (variable NOTIFICATION_PROVIDER).
+ * Fournisseur de notification. Pour brancher SMTP, SendGrid, SMS..., implémenter `send`
+ * et l'enregistrer dans `createProvider` (variable NOTIFICATION_PROVIDER).
  */
 export abstract class NotificationProvider {
   abstract readonly channel: string;
@@ -26,7 +26,7 @@ export class MockNotificationProvider extends NotificationProvider {
   }
 }
 
-/** Exemple de fournisseur réel : relaie vers un webhook HTTP (passerelle email/SMS maison, Zapier, n8n...). */
+/** Fournisseur réel : relaie vers un webhook HTTP (passerelle email/SMS, n8n...). */
 @Injectable()
 export class WebhookNotificationProvider extends NotificationProvider {
   readonly channel = 'EMAIL';

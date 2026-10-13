@@ -1,6 +1,6 @@
-// Génère une migration TypeORM pour un service en comparant ses entités au schéma produit par ses migrations existantes.
-// Usage : npm run migration:generate -- <service> <NomEnPascalCase>     (ex. : npm run migration:generate -- order AddDeliveryDate)
-// Le service doit être compilé (npm run build). Une base PostgreSQL jetable est démarrée dans Docker puis supprimée.
+// Génère une migration TypeORM en comparant les entités du service au schéma produit par ses migrations.
+// Usage : npm run migration:generate -- <service> <NomEnPascalCase>
+// Le service doit être compilé (npm run build). Un PostgreSQL jetable est lancé dans Docker puis supprimé.
 import { writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { withTempPostgres, loadService, SERVICES_WITH_DB } from './lib/migrations.mjs';

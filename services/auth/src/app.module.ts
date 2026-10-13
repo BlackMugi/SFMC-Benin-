@@ -13,7 +13,7 @@ import { TokensService } from './tokens.service';
 
 @Module({
   imports: [
-    // auth-service ne s'appelle pas lui-même pour obtenir un jeton de service : il le signe localement.
+    // auth-service signe lui-même son jeton de service au lieu de s'appeler.
     CommonModule.forRoot({ serviceName: 'auth-service', events: false, tokenProvider: LocalTokenProvider }),
     TypeOrmModule.forRootAsync(typeOrmConfig(MIGRATIONS)),
     TypeOrmModule.forFeature([RefreshToken, OAuthClient]),

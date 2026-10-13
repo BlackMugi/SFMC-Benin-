@@ -26,7 +26,7 @@ export const PUBLIC_ROUTES: PublicRoute[] = [
   { method: 'POST', pattern: /^\/api\/users\/register\/?$/ },
 ];
 
-/** Endpoints techniques jamais exposés à l'extérieur. */
+/** Endpoints techniques jamais exposés. */
 export const BLOCKED = /\/(internal|metrics|health)(\/|$)/;
 
 export function pathOf(url: string): string {

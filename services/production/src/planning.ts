@@ -15,9 +15,9 @@ export interface PlannableMachine {
 }
 
 /**
- * Priorité d'un ordre de fabrication (plus grand = plus prioritaire) :
- *  - urgence 1..5 : 100 points par niveau (critère dominant) ;
- *  - ancienneté : +0,5 point par minute d'attente (plafonné à 2 h) -> évite la famine ;
+ * Priorité d'un ordre (plus grand = plus prioritaire) :
+ *  - urgence 1..5 : 100 points par niveau, critère dominant ;
+ *  - ancienneté : +0,5 point par minute d'attente, plafonné à 2 h, pour éviter la famine ;
  *  - échéance : +50 si due sous 24 h, +100 si dépassée.
  */
 export function priorityScore(o: Pick<PlannableOrder, 'urgency' | 'createdAt' | 'requiredBy'>, now = new Date()): number {
@@ -31,7 +31,7 @@ export function priorityScore(o: Pick<PlannableOrder, 'urgency' | 'createdAt' | 
   return o.urgency * 100 + ageMin * 0.5 + deadline;
 }
 
-/** Durée simulée (ms) : quantité / cadence, accélérée par le facteur de simulation, avec un plancher visible. */
+/** Durée simulée (ms) : quantité / cadence, accélérée par le facteur de simulation, avec un plancher. */
 export function durationMs(quantity: number, ratePerMinute: number, speedFactor: number, minSeconds: number): number {
   const realMs = ((quantity / ratePerMinute) * 60_000) / Math.max(1, speedFactor);
   return Math.max(minSeconds * 1000, Math.round(realMs));
@@ -47,8 +47,8 @@ export interface PlanEntry {
 }
 
 /**
- * Planification gloutonne : on trie par priorité décroissante puis on affecte chaque ordre
- * à la machine compatible qui sera libre le plus tôt (ressources machines limitées).
+ * Planification gloutonne : tri par priorité décroissante, chaque ordre va à la machine compatible
+ * libre le plus tôt.
  */
 export function buildPlan(
   queued: PlannableOrder[],

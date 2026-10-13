@@ -17,12 +17,9 @@ type Handler = (event: DomainEvent) => Promise<void>;
 interface Subscription { queue: string; types: EventType[]; handler: Handler }
 
 /**
- * Bus d'événements RabbitMQ (exchange topic, clé de routage = type d'événement).
- * - une file durable par (service, usage) : plusieurs instances = consommateurs concurrents ;
- * - ré-essais bornés puis dead-letter (sfmc.dead-letters) ;
- * - correlation-id propagé dans l'enveloppe et restauré dans le contexte du consommateur ;
- * - publication uniquement via l'Outbox (transactionnelle) ; réception dédupliquée par identifiant d'événement
- *   (table processed_events) : un événement livré plusieurs fois n'est traité qu'une fois par file.
+ * Bus RabbitMQ (exchange topic, clé de routage = type d'événement).
+ * Une file durable par (service, usage), ré-essais bornés puis dead-letter (sfmc.dead-letters).
+ * Publication via l'outbox uniquement ; réception dédupliquée par identifiant d'événement (table processed_events).
  */
 @Injectable()
 export class EventBus implements OnApplicationShutdown {
@@ -82,8 +79,8 @@ export class EventBus implements OnApplicationShutdown {
   }
 
   /**
-   * Publie une enveloppe déjà construite (appelé par le relais de l'Outbox). Échoue immédiatement si le broker est
-   * indisponible : l'événement reste dans l'outbox et sera ré-essayé, sans bloquer la transaction du relais.
+   * Publie une enveloppe déjà construite (appelé par le relais de l'outbox).
+   * Échoue tout de suite si le broker est indisponible : l'événement reste dans l'outbox.
    */
   async publishEnvelope(envelope: EventEnvelope): Promise<void> {
     const ch = this.channel;
@@ -104,7 +101,7 @@ export class EventBus implements OnApplicationShutdown {
     this.log.log(`Événement publié : ${envelope.type}`);
   }
 
-  /** Déclare une file et la lie aux types demandés. À appeler depuis onModuleInit. */
+  /** Déclare une file liée aux types demandés. À appeler depuis onModuleInit. */
   async subscribe(queue: string, types: EventType[], handler: Handler): Promise<void> {
     const sub = { queue, types, handler };
     this.subscriptions.push(sub);
@@ -134,7 +131,7 @@ export class EventBus implements OnApplicationShutdown {
     }
     const violations = contractViolations(event.type, event.payload);
     if (violations.length) {
-      // Message non conforme : inutile de le ré-essayer, il part directement en dead-letter pour analyse
+      // Message non conforme : direct en dead-letter, inutile de ré-essayer
       this.log.error(`Contrat ${event.type} non respecté (${event.source ?? 'source inconnue'}) : ${violations.join(' ; ')}`);
       this.metrics.eventsFailed.inc({ type: event.type });
       ch.nack(msg, false, false);
@@ -147,7 +144,7 @@ export class EventBus implements OnApplicationShutdown {
           ch.ack(msg);
           return;
         }
-        await handler(event as DomainEvent); // conforme à son contrat (vérifié ci-dessus) : contenu typé selon son type
+        await handler(event as DomainEvent); // validé juste au-dessus
         await this.markProcessed(event.id, queue);
         this.metrics.eventsConsumed.inc({ type: event.type });
         ch.ack(msg);
@@ -162,7 +159,7 @@ export class EventBus implements OnApplicationShutdown {
           }, 1000 * (retries + 1));
         } else {
           this.metrics.eventsFailed.inc({ type: event.type });
-          ch.nack(msg, false, false); // -> dead-letter
+          ch.nack(msg, false, false); // dead-letter
         }
       }
     });

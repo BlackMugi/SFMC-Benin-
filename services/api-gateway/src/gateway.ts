@@ -11,18 +11,18 @@ type GatewayRequest = Request & { sfmcTarget?: string; sfmcRetried?: boolean };
 
 const isStream = (url: string) => url.startsWith('/api/production/stream');
 
-/** Erreurs réseau signalant une instance morte (et non une erreur applicative). */
+/** Erreurs réseau d'une instance morte (pas une erreur applicative). */
 const DEAD_INSTANCE = new Set(['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENOTFOUND', 'EPIPE']);
 
 function json(res: Response, status: number, message: string) {
   res.status(status).json({ statusCode: status, message });
 }
 
-/** Branche CORS, rate limiting, authentification JWT centralisée et proxy dynamique (Consul). */
+/** CORS, rate limiting, authentification JWT et proxy dynamique via Consul. */
 export function setupGateway(app: INestApplication) {
   const consul = app.get(ConsulService);
 
-  // --- CORS : origines autorisées explicitement (pas de wildcard) ---
+  // CORS : origines explicites, pas de wildcard
   const origins = env('CORS_ORIGINS', '').split(',').map((o) => o.trim()).filter(Boolean);
   app.enableCors({
     origin: origins,
@@ -32,7 +32,7 @@ export function setupGateway(app: INestApplication) {
     maxAge: 600,
   });
 
-  // --- Page d'accueil (évite le 404 quand on ouvre la racine dans un navigateur) ---
+  // Page d'accueil (évite un 404 sur la racine)
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     if (req.path === '/favicon.ico') return void res.status(204).end();
@@ -45,17 +45,17 @@ export function setupGateway(app: INestApplication) {
     });
   });
 
-  // --- Rate limiting : global par IP, plus strict sur les points d'authentification (anti brute-force) ---
+  // Rate limit global par IP, plus strict sur l'authentification
   const limitOpts = { windowMs: 60_000, standardHeaders: 'draft-7' as const, legacyHeaders: false, message: { statusCode: 429, message: 'Trop de requêtes, réessayez plus tard' } };
   const globalLimiter = rateLimit({ ...limitOpts, limit: envInt('GATEWAY_RATE_LIMIT', 300) });
   const authLimiter = rateLimit({ ...limitOpts, limit: envInt('GATEWAY_AUTH_RATE_LIMIT', 30) });
   app.use('/api', globalLimiter);
   app.use(['/api/auth', '/api/oauth', '/api/users/register'], authLimiter);
 
-  // --- Garde-fous + authentification centralisée ---
+  // Garde-fous et authentification centralisée
   app.use('/api', async (req: GatewayRequest, res: Response, next: NextFunction) => {
     const url = req.originalUrl;
-    // L'identité est exclusivement fournie par la gateway : on retire tout en-tête x-user-* du client.
+    // L'identité vient de la gateway seule : tout en-tête x-user-* du client est retiré.
     for (const h of Object.keys(req.headers)) if (h.startsWith('x-user-')) delete req.headers[h];
     if (BLOCKED.test(pathOf(url))) return json(res, 403, 'Accès interdit');
     if (!serviceFor(url)) return json(res, 404, 'Route inconnue');
@@ -66,7 +66,7 @@ export function setupGateway(app: INestApplication) {
     if (!token) return json(res, 401, 'Authentification requise');
     try {
       const user = await verifyAccessToken(token);
-      // Identité propagée aux services (qui revérifient aussi le JWT)
+      // Identité transmise aux services (qui revérifient le JWT)
       req.headers['x-user-id'] = user.id;
       req.headers['x-user-role'] = user.role;
       if (user.email) req.headers['x-user-email'] = user.email;
@@ -77,12 +77,12 @@ export function setupGateway(app: INestApplication) {
     next();
   });
 
-  // --- Résolution du service via Consul ---
+  // Résolution du service via Consul
   app.use('/api', async (req: GatewayRequest, res: Response, next: NextFunction) => {
     const service = serviceFor(req.originalUrl)!;
     try {
       req.sfmcTarget = await consul.resolve(service);
-      // étiquette de métrique : /api/<segment>
+      // label de métrique : /api/<segment>
       req.route = { path: '/' + req.originalUrl.split('/')[2].split('?')[0] };
       next();
     } catch (e) {
@@ -91,14 +91,14 @@ export function setupGateway(app: INestApplication) {
     }
   });
 
-  // Timeout court pour les requêtes classiques (une instance morte est détectée vite et la lecture rejouée) ;
-  // long pour le flux SSE de production, qui peut rester ouvert indéfiniment (heartbeat toutes les 15 s).
+  // Timeout court pour les requêtes classiques (une instance morte est vite détectée et la lecture rejouée),
+  // long pour le flux SSE de production (heartbeat toutes les 15 s).
   const buildProxy = (timeoutMs: number): RequestHandler => createProxyMiddleware<GatewayRequest, Response>({
     target: 'http://placeholder.invalid',
     changeOrigin: true,
     xfwd: true,
     proxyTimeout: timeoutMs,
-    timeout: timeoutMs + 5_000, // doit dépasser proxyTimeout : sinon la socket client est coupée avant que l'erreur soit traitée (et la lecture rejouée)
+    timeout: timeoutMs + 5_000, // doit dépasser proxyTimeout, sinon la socket client est coupée avant le traitement de l'erreur
     router: (req) => req.sfmcTarget!,
     pathRewrite: (_path, req) => req.originalUrl.replace(/^\/api/, ''),
     on: {
@@ -106,7 +106,7 @@ export function setupGateway(app: INestApplication) {
         const gr = req as GatewayRequest;
         const service = serviceFor(gr.originalUrl);
         const r = res as Response;
-        // Instance morte : on l'écarte du cache, et une requête de lecture est rejouée sur une autre instance.
+        // Instance morte : écartée du cache, la lecture est rejouée sur une autre instance.
         if (service && gr.sfmcTarget && DEAD_INSTANCE.has((err as NodeJS.ErrnoException).code ?? '')) {
           consul.markDown(service, gr.sfmcTarget);
           if (!gr.sfmcRetried && ['GET', 'HEAD'].includes(gr.method) && !r.headersSent) {

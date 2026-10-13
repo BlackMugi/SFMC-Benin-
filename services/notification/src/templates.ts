@@ -9,7 +9,7 @@ export interface Rendered {
 const fmt = (n: number, currency = 'XOF') => `${new Intl.NumberFormat('fr-FR').format(n)} ${currency}`;
 const short = (id: string) => id.slice(0, 8);
 
-/** Transforme un événement en message (français). Retourne null pour les événements sans notification. */
+/** Transforme un événement en message. Null pour les événements sans notification. */
 export function render(e: DomainEvent): Rendered | null {
   switch (e.type) {
     case 'OrderCreated':
