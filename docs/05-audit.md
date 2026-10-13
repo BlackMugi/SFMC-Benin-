@@ -1,6 +1,6 @@
 # Audit d'ingénierie
 
-Audit réalisé sur le dépôt et sur la plateforme en fonctionnement. Chaque point a été vérifié par une commande, pas seulement par lecture du code.
+Audit réalisé sur le dépôt et sur la plateforme en fonctionnement. Les points ont été vérifiés par commande, pas par simple lecture du code.
 
 ## 1. Reproductibilité (clone propre, démarrage à froid)
 
@@ -32,7 +32,7 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 | Paquet | Statut |
 |---|---|
 | `js-yaml` (via `@nestjs/swagger`) | Corrigé : version 5.4.3 forcée par `overrides` |
-| `braces` / `micromatch` / `http-proxy-middleware` (3 alertes « high », déni de service par motifs glob imbriqués) | **Risque accepté** : aucun correctif publié en amont (`braces` 3.0.3 est la dernière version), la « solution » proposée par npm est une rétrogradation vers 0.2.0. Non exploitable ici : les motifs glob sont écrits dans notre code, jamais fournis par un client. À réévaluer à chaque mise à jour |
+| `braces` / `micromatch` / `http-proxy-middleware` (3 alertes « high », déni de service par motifs glob imbriqués) | Risque accepté : aucun correctif publié en amont (`braces` 3.0.3 est la dernière version), la « solution » proposée par npm est une rétrogradation vers 0.2.0. Non exploitable ici : les motifs glob sont écrits dans notre code, jamais fournis par un client. À réévaluer à chaque mise à jour |
 
 ## 3. Qualité du code
 
@@ -41,12 +41,12 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 - ESLint (`npm run lint`) : 0 erreur, 0 avertissement ; `any` interdit dans le code de production (règle en erreur, tolérée dans les tests).
 - Défaut trouvé par le linter : dans Order, l'échec de publication de `OrderCreated` était avalé sans trace. Il est maintenant journalisé (la compensation, commande rejetée, existait déjà).
 
-## 4. Améliorations « production » (suite de l'audit)
+## 4. Améliorations après l'audit
 
 ### Migrations versionnées (objectif 1)
 - 9 bases (la gateway n'en a pas) : migration initiale générée depuis les entités, puis relue ; extension `uuid-ossp` et séquence des factures rendues explicites.
 - Application automatique au démarrage sous `pg_advisory_lock` ; reprise des bases existantes par *baseline* ; `synchronize` désactivé.
-- Preuve : `npm run test:migrations` : 63 contrôles sur 63 (up, schéma = entités, down complet, up à nouveau, baseline sans perte). Sur la plateforme existante : 9 baselines, 13 commandes avant et après.
+- Test : `npm run test:migrations` : 63 contrôles sur 63 (up, schéma = entités, down complet, up à nouveau, baseline sans perte). Sur la plateforme existante : 9 baselines, 13 commandes avant et après.
 - Défaut trouvé au passage : la compilation incrémentale de TypeScript (cache `tsbuildinfo` hors de `dist/`, que `nest build` vide) produisait des `dist/` incomplets en local. Compilation incrémentale désactivée.
 
 ### Outbox transactionnelle (objectif 2)
@@ -54,14 +54,14 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 - Relais par instance (`FOR UPDATE SKIP LOCKED`, ordre conservé, échec immédiat si le broker est absent pour ne pas tenir de verrous), purge après 7 jours.
 - Consommateurs : déduplication par identifiant d'événement (`processed_events`) en plus de l'idempotence métier existante.
 - `/health` : le broker n'est plus bloquant (`degraded` au lieu de 503), nombre d'événements en attente exposé (`outboxPending`).
-- Preuve : `npm run test:resilience` (2/2) : broker arrêté + crash de `order-service` → commande validée et facturée après redémarrage, aucune ligne restée en attente ; doublon renvoyé à la main → ignoré, aucune réservation en plus.
-- Limite : un consommateur qui plante **après** son traitement mais **avant** d'enregistrer l'identifiant retraitera l'événement ; c'est sans effet car chaque traitement est lui-même idempotent (compare-and-set, clés d'unicité), mais ce n'est pas une garantie « exactement une fois » au sens strict.
+- Test : `npm run test:resilience` (2/2) : broker arrêté + crash de `order-service` → commande validée et facturée après redémarrage, aucune ligne restée en attente ; doublon renvoyé à la main → ignoré, aucune réservation en plus.
+- Limite : un consommateur qui plante après son traitement mais avant d'enregistrer l'identifiant retraitera l'événement ; c'est sans effet car chaque traitement est lui-même idempotent (compare-and-set, clés d'unicité), mais ce n'est pas une garantie « exactement une fois » au sens strict.
 
 ### Jetons RS256 + JWKS (objectif 3)
-- Avant : un secret partagé (HS256) par les 10 services servait à signer **et** à vérifier ; un seul service compromis permettait de fabriquer des jetons administrateur.
+- Avant : un secret partagé (HS256) par les 10 services servait à signer et à vérifier ; un seul service compromis permettait de fabriquer des jetons administrateur.
 - Après : clé privée RSA 2048 chez `auth-service` uniquement ; publication JWKS (`kid` = empreinte RFC 7638) ; vérification par clé publique partout, avec cache et rechargement limité (une fois toutes les 5 s au plus en cas de `kid` inconnu, une seule requête à la fois ; rechargement complet toutes les 10 min) ; rotation par clé précédente ; `JWT_SECRET` supprimé. Aucune nouvelle dépendance (crypto native de Node).
 - Si `auth-service` est injoignable au moment où un service doit charger les clés : réponse 503 (et non 401), pour ne pas déconnecter les utilisateurs à tort.
-- Preuves : tests unitaires (jeton valide, clé précédente acceptée, autre clé, `alg=none`, confusion HS256/clé publique, `kid` inventé, type `refresh`, aucune partie privée dans le JWKS) ; sur la plateforme : clé privée présente dans le seul conteneur `auth-service`, `JWT_SECRET` absent partout, attaque par confusion d'algorithme refusée à la gateway et directement sur un service (401), jetons émis en RS256 avec un `kid` publié.
+- Tests : tests unitaires (jeton valide, clé précédente acceptée, autre clé, `alg=none`, confusion HS256/clé publique, `kid` inventé, type `refresh`, aucune partie privée dans le JWKS) ; sur la plateforme : clé privée présente dans le seul conteneur `auth-service`, `JWT_SECRET` absent partout, attaque par confusion d'algorithme refusée à la gateway et directement sur un service (401), jetons émis en RS256 avec un `kid` publié.
 
 ### Tests de sécurité permanents (objectif 4)
 - `npm run test:security` : 24 tests contre la plateforme réelle (HTTPS via la gateway et appels directs aux services). Transport (redirection HTTPS, en-têtes) ; JWT (absent, `alg=none`, confusion HS256/clé publique, autre clé RSA, `kid` inventé, contenu altéré, rejeu de refresh token avec révocation de la famille, message identique pour compte inconnu ou mauvais mot de passe) ; autorisation (RBAC, en-têtes `x-user-*` forgés via la gateway et en direct, accès à la commande et à la facture d'un autre client, modification du profil d'un autre, auto-promotion admin, endpoints internes, scopes OAuth2 partenaire) ; entrées (SQLi en paramètre, en identifiant et au login, XSS, mass assignment, DTO stricts, corps > 1 Mo) ; CORS ; limitation des tentatives de connexion.
@@ -70,13 +70,13 @@ Contrôles exécutés contre la plateforme réelle (HTTPS, port 8443) : 16 sur 1
 ### Contrats entre services (objectif 5)
 - Contrat par événement (15), lié au type TypeScript : un champ manquant ou inventé dans un contrat casse la compilation (vérifié en provoquant les deux erreurs).
 - Appliqué à l'exécution : à l'envoi (outbox, transaction annulée) et à la réception (dead-letter immédiate). Aucune nouvelle dépendance.
-- Preuves : 34 tests unitaires (exemple de référence conforme pour chaque événement, chaque champ obligatoire manquant détecté, types, formats, valeurs, tableaux) ; `npm run test:contracts -- --live` : 77 contrôles, catalogue documenté = code, 320 événements réels conformes sur les 15 types, message cassé injecté dans RabbitMQ écarté en dead-letter et refusé par son consommateur.
+- Tests : 34 tests unitaires (exemple de référence conforme pour chaque événement, chaque champ obligatoire manquant détecté, types, formats, valeurs, tableaux) ; `npm run test:contracts -- --live` : 77 contrôles, catalogue documenté = code, 320 événements réels conformes sur les 15 types, message cassé injecté dans RabbitMQ écarté en dead-letter et refusé par son consommateur.
 - Défaut trouvé : le catalogue documenté omettait Notification parmi les consommateurs de `ProductionFailed` (alerte équipe). Corrigé ; le test empêche ce type de dérive à l'avenir.
 - Limite : les tests unitaires des services (Order, Billing) utilisent des identifiants simplifiés et ne passent donc pas par la validation des contrats ; les producteurs sont couverts par la validation à l'envoi et par le contrôle des événements réels.
 
 ### Typage strict des événements (objectif 6)
 - Les 17 `any` du code de production ont été supprimés, sans changement de comportement (mêmes tests verts, mêmes résultats de démo).
-- Gain principal : type `DomainEvent` (union discriminée). Dans chaque gestionnaire, après `switch (e.type)`, le compilateur connaît le contenu exact du message : lire un champ qui n'existe pas dans cet événement, ou mal orthographié, est désormais une erreur de compilation. Le bus ne transmet un `DomainEvent` qu'après vérification du contrat.
+- Apport principal : type `DomainEvent` (union discriminée). Dans chaque gestionnaire, après `switch (e.type)`, le compilateur connaît le contenu exact du message : lire un champ qui n'existe pas dans cet événement, ou mal orthographié, est désormais une erreur de compilation. Le bus ne transmet un `DomainEvent` qu'après vérification du contrat.
 - Autres : connexion RabbitMQ et application Express typées (fin des transtypages), réponse du client REST de type `unknown` par défaut (l'appelant doit préciser le type attendu).
 - La règle ESLint `no-explicit-any` est passée en erreur : un nouveau `any` fait échouer `npm run lint`.
 - Défaut de méthode trouvé : mon contrôle local de compilation filtrait la sortie colorée de `nest build` et pouvait manquer une erreur ; le build Docker l'a détectée. Contrôle corrigé (code de sortie, couleurs retirées).

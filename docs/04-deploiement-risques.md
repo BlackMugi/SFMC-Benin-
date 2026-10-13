@@ -64,8 +64,8 @@ curl https://api.exemple.bj/api/products -H "authorization: Bearer <jeton>"
 
 | Risque (cahier §8) | Parade mise en œuvre | Reste à faire |
 |---|---|---|
-| Complexité de la communication inter-services | Contrats d'événements typés dans `packages/common`, catalogue d'événements documenté, `correlation-id` propagé et chronologie par commande (Reporting) | Tests de contrat entre services |
-| Transactions distribuées | Saga par chorégraphie avec compensations (réservation annulée, commande rejetée), opérations idempotentes (rejeu d'événement sans doublon), transitions d'état en compare-and-set | *Outbox* pour ne jamais perdre un événement publié après commit |
+| Complexité de la communication inter-services | Contrats d'événements typés dans `packages/common`, catalogue d'événements documenté, `correlation-id` propagé et chronologie par commande (Reporting) | Aucun |
+| Transactions distribuées | Saga par chorégraphie avec compensations (réservation annulée, commande rejetée), opérations idempotentes (rejeu d'événement sans doublon), transitions d'état en compare-and-set | Aucun (outbox en place) |
 | Latence réseau | Appel REST synchrone limité à Order → Inventory, timeouts courts, instance morte écartée et lectures rejouées par la gateway, mesure k6 : p95 ≈ 80 ms | Cache de lecture du catalogue |
 | Synchronisation des données | Cohérence éventuelle assumée, base par service, vues de lecture Reporting alimentées par événements, réservations atomiques côté Inventory | Réconciliation périodique Inventory / Reporting |
 

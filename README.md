@@ -1,7 +1,7 @@
 # SFMC Bénin – Plateforme microservices
 
 Production et distribution de matériaux de construction (ciment, fer, briques, granulats).
-Architecture microservices **NestJS + TypeScript**, **PostgreSQL** (une base par service), **RabbitMQ**, **Consul**, **Docker Compose**, **Prometheus + Grafana**.
+Microservices NestJS + TypeScript, PostgreSQL (une base par service), RabbitMQ, Consul, Docker Compose, Prometheus et Grafana.
 
 ## Démarrage rapide
 
@@ -47,9 +47,9 @@ Diagrammes Mermaid détaillés dans [`docs/`](docs/) :
 | `auth` | Login JWT (access + refresh avec rotation et détection de rejeu), OAuth2 *client credentials* (inter-services et intégrations externes), introspection RFC 7662 |
 | `user` | CRUD utilisateurs, rôles `admin` / `operator` / `client`, inscription publique (client uniquement) |
 | `product` | Catalogue (ciment, fer, briques, granulats) |
-| `inventory` | Multi-entrepôts, `Stock` / `StockMovement` (IN/OUT), transferts, réservations atomiques, **seuil critique dynamique** + alerte |
+| `inventory` | Multi-entrepôts, `Stock` / `StockMovement` (IN/OUT), transferts, réservations atomiques, seuil critique dynamique et alerte |
 | `order` | Cycle `pending → validated → shipped` (+ `rejected`, `cancelled`) et saga |
-| `production` | Machines, ordres de fabrication, planification par priorité, suivi temps réel **SSE** |
+| `production` | Machines, ordres de fabrication, planification par priorité, suivi temps réel SSE |
 | `billing` | Facture (TVA) à la validation, paiement (fournisseur interchangeable) |
 | `notification` | Consomme les événements ; interface `NotificationProvider` (mock, webhook) |
 | `reporting` | Vues de lecture : ventes, stocks, production, chronologie des commandes |
@@ -61,9 +61,9 @@ Si le stock manque : `StockInsufficient` → Order publie `ProductionRequested` 
 
 **Compensations** : `ProductionFailed` → commande `rejected` → `OrderRejected` → Inventory libère la réservation (`StockReleased`), Billing annule la facture ; annulation client → `OrderCancelled` (mêmes effets) ; si `StockReserved` arrive après une annulation, Order republie `OrderCancelled` (libération idempotente).
 
-Garanties : **outbox transactionnelle** (changement d'état et événement enregistrés ensemble, aucun événement perdu même si RabbitMQ est arrêté ou si un service plante), consommateurs dédupliqués par identifiant d'événement (table `processed_events`) en plus de leur idempotence métier (clés d'unicité, compare-and-set), 3 ré-essais puis file `sfmc.dead-letters`, verrous `FOR UPDATE` ordonnés (pas d'interblocage), cohérence éventuelle.
+Garanties : outbox transactionnelle (l'état et l'événement sont enregistrés ensemble, rien n'est perdu si RabbitMQ est arrêté ou si un service plante), consommateurs dédupliqués par identifiant d'événement (table `processed_events`) en plus de leur idempotence métier (clés d'unicité, compare-and-set), 3 ré-essais puis file `sfmc.dead-letters`, verrous `FOR UPDATE` ordonnés, cohérence éventuelle.
 
-Preuve : `npm run test:resilience` arrête RabbitMQ, passe une commande, tue `order-service`, redémarre le tout et vérifie que la commande est validée et facturée, puis renvoie un événement déjà traité et vérifie qu'il est ignoré. Ce test provoque de vraies pannes : à lancer sur la plateforme de développement uniquement.
+Test : `npm run test:resilience` arrête RabbitMQ, passe une commande, tue `order-service`, redémarre le tout et vérifie que la commande est validée et facturée, puis renvoie un événement déjà traité pour vérifier qu'il est ignoré. Il provoque de vraies pannes : à lancer sur la plateforme de développement uniquement.
 
 ### Seuil critique (Inventory)
 
@@ -80,21 +80,21 @@ Fin de fabrication : la machine est libérée et le lot passe à `QUALITY_CHECK`
 ## Disponibilité et performance
 
 - Services stateless, `restart: unless-stopped`, healthchecks Docker, retrait automatique des instances malsaines par Consul.
-- **Haute disponibilité** : `docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --build` lance 2 répliques de gateway, auth, product, inventory et order. nginx répartit la charge entre les gateways (DNS dynamique), les gateways entre les services (Consul, round-robin), Prometheus scrape chaque réplique. `production-service` reste unique (flux SSE en mémoire). Le rate limit est compté par instance de gateway.
+- Haute disponibilité : `docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --build` lance 2 répliques de gateway, auth, product, inventory et order. nginx répartit la charge entre les gateways (DNS dynamique), les gateways entre les services (Consul, round-robin), Prometheus scrape chaque réplique. `production-service` reste unique (flux SSE en mémoire). Le rate limit est compté par instance de gateway.
 - La gateway écarte une instance injoignable et rejoue les requêtes de lecture (GET/HEAD) sur une autre.
-- **Test de charge k6** (`npm run load`) : 30 utilisateurs virtuels sur 6 endpoints, seuils p95 < 2 s et erreurs < 1 %. `npm run load:ha` tue en plus une réplique d'`order-service` pendant la charge. Pour la charge, relever `GATEWAY_RATE_LIMIT` (par ex. 100000) avant `docker compose up`.
+- Test de charge k6 (`npm run load`) : 30 utilisateurs virtuels sur 6 endpoints, seuils p95 < 2 s et erreurs < 1 %. `npm run load:ha` tue en plus une réplique d'`order-service` pendant la charge. Pour la charge, relever `GATEWAY_RATE_LIMIT` (par ex. 100000) avant `docker compose up`.
 - Mesuré en local (stack à 2 répliques) : p95 ≈ 80 ms, 0 % d'erreur, ≈ 400 req/s. Remesuré après l'outbox et la vérification RS256 (stack simple, données accumulées) : p95 ≈ 111 ms, 0 % d'erreur sur 15 637 requêtes. Avec arrêt brutal d'une réplique : < 1 % d'erreurs (requêtes en vol sur l'instance tuée).
 
 ## Sécurité (OWASP)
 
-- **HTTPS** via nginx (certificat auto-signé généré au démarrage, TLS 1.2+, HSTS) ; en production, monter un vrai certificat dans le volume `nginx-certs`.
-- **JWT RS256 + JWKS** : seul Auth possède la clé privée et signe les jetons ; la Gateway et chaque service vérifient avec la clé publique, récupérée chez Auth via Consul (`GET /oauth/jwks`, public sur `/api/oauth/jwks`). Un service compromis ne peut donc pas fabriquer de jeton. Seul l'algorithme RS256 est accepté (`alg=none` et la confusion HS256/clé publique sont rejetés). Jetons vérifié à la Gateway **et** dans chaque service (défense en profondeur) ; RBAC par `@Roles()` ; les en-têtes `x-user-*` du client sont supprimés puis réécrits par la Gateway.
+- HTTPS via nginx (certificat auto-signé généré au démarrage, TLS 1.2+, HSTS) ; en production, monter un vrai certificat dans le volume `nginx-certs`.
+- JWT RS256 + JWKS : seul Auth possède la clé privée et signe les jetons. La gateway et chaque service vérifient avec la clé publique, récupérée chez Auth via Consul (`GET /oauth/jwks`, public sur `/api/oauth/jwks`). Un service compromis ne peut pas fabriquer de jeton. Seul RS256 est accepté (`alg=none` et la confusion HS256/clé publique sont rejetés). Le jeton est vérifié à la gateway et dans chaque service ; RBAC par `@Roles()` ; les en-têtes `x-user-*` du client sont supprimés puis réécrits par la gateway.
 - Endpoints `internal`, `/metrics`, `/health` non routés par la Gateway ; réservés au rôle `service` (jeton *client credentials*).
-- **Validation stricte** : `ValidationPipe` (`whitelist` + `forbidNonWhitelisted`), DTO typés, UUID validés, bornes numériques ; texte libre assaini (balises HTML retirées).
-- **Injection SQL** : uniquement requêtes paramétrées (TypeORM). **XSS** : `helmet` (CSP, nosniff…) + assainissement. **CSRF** : API sans cookie, jeton Bearer dans l'en-tête (pas de session ambiante à forger). **CORS** : origines explicites (`CORS_ORIGINS`).
-- **Rate limiting** : global (`GATEWAY_RATE_LIMIT`) et renforcé sur login/refresh/token/register (`GATEWAY_AUTH_RATE_LIMIT`).
+- Validation : `ValidationPipe` (`whitelist` + `forbidNonWhitelisted`), DTO typés, UUID validés, bornes numériques ; texte libre assaini (balises HTML retirées).
+- Injection SQL : requêtes paramétrées uniquement (TypeORM). XSS : `helmet` (CSP, nosniff...) et assainissement des textes. CSRF : API sans cookie, jeton Bearer dans l'en-tête. CORS : origines explicites (`CORS_ORIGINS`).
+- Rate limiting : global (`GATEWAY_RATE_LIMIT`) et renforcé sur login/refresh/token/register (`GATEWAY_AUTH_RATE_LIMIT`).
 - Mots de passe `bcrypt` ; refresh tokens stockés hachés (SHA-256) avec rotation ; secrets clients hachés ; comparaison à temps constant.
-- **Aucun secret en dur** : tout vient du `.env` (ignoré par git) ; `.env.example` fourni.
+- Aucun secret en dur : tout vient du `.env` (ignoré par git) ; `.env.example` fourni.
 
 ## Observabilité
 
@@ -166,7 +166,7 @@ curl -skN https://localhost:8443/api/production/stream -H "authorization: Bearer
 
 ## Base de données et migrations
 
-Chaque service possède sa base et ses **migrations versionnées** (`services/<service>/src/migrations`). Une migration est un fichier qui décrit un changement de schéma (`up`) et comment l'annuler (`down`) : le schéma évolue de façon contrôlée et identique sur toutes les machines, au lieu d'être déduit automatiquement du code.
+Chaque service possède sa base et ses migrations versionnées (`services/<service>/src/migrations`), chacune avec un `up` et un `down`.
 
 - Au démarrage, le service applique les migrations en attente avant d'accepter des requêtes, sous verrou PostgreSQL (deux répliques ne migrent jamais en même temps).
 - Base créée avant les migrations (ancien mode `synchronize`) : la migration initiale est marquée comme appliquée sans toucher aux données (*baseline*).
@@ -195,10 +195,10 @@ services/<nom>      un microservice NestJS indépendant (code, entités, tests, 
 infra/              nginx (HTTPS), prometheus, grafana (provisioning + dashboard)
 docs/               diagrammes Mermaid
 tests/integration   test e2e du flux commande + helpers partagés avec le script de démo
-scripts/            init-env.mjs, demo.mjs
+scripts/            init-env, demo, tests de contrats et de migrations, test de charge
 ```
 
 ## Limites connues / pistes
 
-- Publication d'événements après commit sans *outbox* : un crash entre les deux pourrait perdre un événement (atténué à la création de commande par rejet compensatoire).
 - Consul en mode `-dev` (un seul nœud, non persistant) ; RabbitMQ et PostgreSQL en instance unique.
+- Le rate limit est compté par instance de gateway.
